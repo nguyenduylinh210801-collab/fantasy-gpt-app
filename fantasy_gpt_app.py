@@ -43,6 +43,12 @@ with st.spinner("Đang lấy dữ liệu nhóm và điểm số từng vòng..."
 
     # Xếp hạng tổng
     all_players_scores = sorted(all_players_scores, key=lambda x: x["total"], reverse=True)
+if not all_players_scores:
+    st.warning("❗ Không có người chơi nào trong league này, hoặc không thể lấy dữ liệu từ FPL API.")
+    st.stop()
+else:
+    num_gws = max(len(p["scores"]) for p in all_players_scores)
+
 
 num_gws = max(len(p["scores"]) for p in all_players_scores)
 
