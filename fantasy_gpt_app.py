@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from collections import defaultdict
 
-LEAGUE_ID = 1007447  # Thay bằng League ID của bạn
+LEAGUE_ID = 1007448  # Thay bằng League ID của bạn
 
 def get_league_standings(league_id):
     url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
