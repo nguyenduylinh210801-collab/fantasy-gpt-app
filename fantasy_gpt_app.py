@@ -18,7 +18,7 @@ def get_player_history(entry_id):
     return data["current"]
 
 st.set_page_config(page_title="FPL Auto League Tracker", page_icon="⚽")
-st.title("⚽ Fantasy Premier League: League Auto Tracker")
+st.title("⚽ Fantasy Premier League 2025-2026")
 
 st.info(f"👉 **Nhập Code để tham gia:** `{INVITE_CODE}`")
 
