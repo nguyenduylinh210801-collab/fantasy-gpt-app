@@ -1,13 +1,8 @@
 import streamlit as st
-import openai
 import os
-from dotenv import load_dotenv
-import random
-import string
-
-# ===== Load API Key =====
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+import json
+import requests
+import matplotlib.pyplot as plt
 
 # ===== Cấu trúc dữ liệu =====
 class Player:
@@ -42,15 +37,39 @@ class FantasyGroup:
     def get_leaderboard(self):
         return sorted(self.players.values(), key=lambda p: p.total_score(), reverse=True)
 
+# ===== Lưu & tải dữ liệu =====
+def save_to_file(group):
+    with open("data.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "group": group.name,
+            "code": group.code,
+            "players": {
+                name: player.scores for name, player in group.players.items()
+            }
+        }, f, ensure_ascii=False)
+
+def load_from_file():
+    try:
+        with open("data.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            g = FantasyGroup(data["group"], data["code"])
+            for name, scores in data["players"].items():
+                g.add_player(name)
+                for s in scores:
+                    g.players[name].add_score(s)
+            return g
+    except:
+        return FantasyGroup("Giải Fantasy 2025", "u3dip1")
+
 # ===== Khởi tạo trạng thái Streamlit =====
 if "group" not in st.session_state:
-    st.session_state.group = FantasyGroup("Giải Fantasy 2025", "u3dip1")
+    st.session_state.group = load_from_file()
 
 group = st.session_state.group
 
 # ===== Giao diện =====
 st.set_page_config(page_title="Fantasy GPT", page_icon="⚽")
-st.title("⚽ Fantasy League Tracker + GPT Gợi Ý Đội Hình")
+st.title("⚽ Fantasy League Tracker")
 st.markdown(f"🔐 Mã nhóm: `{group.code}`")
 
 with st.sidebar:
@@ -68,6 +87,7 @@ for player in group.players.values():
 
 if st.button("✅ Cập nhật điểm"):
     group.add_round_scores(scores)
+    save_to_file(group)
     st.success("Đã cập nhật điểm cho vòng này!")
 
 # ===== Bảng xếp hạng =====
@@ -84,31 +104,42 @@ if leaderboard:
 else:
     st.info("Chưa có người chơi nào hoặc chưa có điểm!")
 
-# ===== GPT Gợi ý đội hình =====
-st.subheader("🤖 GPT Gợi Ý Đội Hình Fantasy")
-current_team = st.text_area("Nhập đội hình hiện tại (ví dụ: Haaland, Salah, Saka...)")
+# ===== Biểu đồ tiến độ điểm =====
+st.subheader("📈 Biểu đồ tiến độ điểm theo vòng")
+if leaderboard:
+    fig, ax = plt.subplots()
+    for player in leaderboard:
+        rounds = list(range(1, len(player.scores) + 1))
+        ax.plot(rounds, player.scores, marker='o', label=player.name)
 
-if st.button("🎯 Gợi ý thay đổi đội hình"):
-    if current_team.strip() == "":
-        st.warning("⛔ Vui lòng nhập đội hình.")
-    else:
-        prompt = (
-            "Bạn là chuyên gia Fantasy Premier League. Hãy phân tích đội hình sau:\n"
-            f"{current_team}\n"
-            "Đưa ra 2-3 gợi ý thay đổi để tối ưu đội hình, tránh chấn thương, lựa chọn cầu thủ tiềm năng. Ngắn gọn, súc tích, dưới 150 từ."
-        )
+    ax.set_xlabel("Vòng đấu")
+    ax.set_ylabel("Điểm")
+    ax.set_title("Tiến độ điểm theo từng vòng")
+    ax.legend()
+    ax.grid(True)
+    st.pyplot(fig)
+else:
+    st.info("Chưa có dữ liệu để hiển thị biểu đồ.")
 
-        with st.spinner("GPT đang phân tích..."):
-            try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "Bạn là chuyên gia Fantasy Premier League."},
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-                reply = response.choices[0].message.content
-                st.success("✅ Gợi ý từ GPT:")
-                st.write(reply)
-            except Exception as e:
-                st.error(f"Lỗi: {e}")
+# ===== Lấy điểm tự động =====
+st.subheader("🌍 Lấy điểm tự động từ FPL API")
+if st.button("🛰️ Lấy điểm từ FPL API"):
+    url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+    try:
+        res = requests.get(url)
+        data = res.json()
+        name_map = {p['web_name'].lower(): p['total_points'] for p in data['elements']}
+
+        auto_scores = {}
+        for player in group.players.values():
+            pname = player.name.lower()
+            if pname in name_map:
+                auto_scores[player.name] = name_map[pname]
+            else:
+                auto_scores[player.name] = 0
+
+        group.add_round_scores(auto_scores)
+        save_to_file(group)
+        st.success("✅ Đã cập nhật điểm tự động!")
+    except Exception as e:
+        st.error(f"Lỗi khi gọi API: {e}")
