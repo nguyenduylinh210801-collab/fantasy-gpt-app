@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import matplotlib.pyplot as plt
 
-LEAGUE_ID = 1007448  # League của bạn
+LEAGUE_ID = 1007448  
+INVITE_CODE = "u3dip1"  
 
 def get_league_standings(league_id):
     url = f"https://fantasy.premierleague.com/api/leagues-classic/{league_id}/standings/"
@@ -19,7 +20,7 @@ def get_player_history(entry_id):
 st.set_page_config(page_title="FPL Auto League Tracker", page_icon="⚽")
 st.title("⚽ Fantasy Premier League: League Auto Tracker")
 
-st.info(f"Mã giải đấu của bạn: `{LEAGUE_ID}`")
+st.info(f"👉 **Nhập Code để tham gia:** `{INVITE_CODE}`")
 
 with st.spinner("Đang lấy dữ liệu nhóm và điểm số từng vòng..."):
     players = get_league_standings(LEAGUE_ID)
