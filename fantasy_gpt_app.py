@@ -21,10 +21,6 @@ st.title("⚽ Fantasy Premier League: League Auto Tracker")
 
 st.info(f"Mã giải đấu của bạn: `{LEAGUE_ID}`")
 
-# ===== Khởi tạo trạng thái Streamlit =====
-if "group" not in st.session_state:
-    st.session_state.group = FantasyGroup("Giải Fantasy 2025", "u3dip1")
-
 
 with st.spinner("Đang lấy dữ liệu nhóm và điểm số từng vòng..."):
     players = get_league_standings(LEAGUE_ID)
