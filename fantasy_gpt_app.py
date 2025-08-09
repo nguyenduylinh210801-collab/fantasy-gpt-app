@@ -72,6 +72,17 @@ league_id_int = _to_int(league_id)
 if league_id and league_id_int is None:
     st.sidebar.error("⚠️ League ID phải là số nguyên.")
 
+# Sidebar controls
+st.sidebar.header("⚙️ Cài đặt")
+
+if st.sidebar.button("Test Google Sheets"):
+    try:
+        sh = get_sheet()
+        wss = [ws.title for ws in sh.worksheets()]
+        st.sidebar.success(f"Kết nối OK. Worksheets: {wss}")
+    except Exception as e:
+        st.sidebar.error(f"Lỗi GS: {e}")
+
 
 # =========================
 # Streamlit Page
@@ -128,10 +139,25 @@ def get_gs_client():
 
 @st.cache_resource(show_spinner=False)
 def get_sheet():
-    client = get_gs_client()
-    if not SHEET_ID:
-        raise RuntimeError("GSPREAD_SHEET_ID not set in secrets")
-    return client.open_by_key(SHEET_ID)
+    try:
+        if not SVC_INFO:
+            raise RuntimeError("Missing st.secrets['gcp_service_account']")
+        if not SHEET_ID:
+            raise RuntimeError("Missing st.secrets['GSPREAD_SHEET_ID']")
+        creds = Credentials.from_service_account_info(SVC_INFO, scopes=SCOPES)
+        client = gspread.authorize(creds)
+        return client.open_by_key(SHEET_ID)
+    except gspread.exceptions.APIError as e:
+        sa_email = (SVC_INFO or {}).get("client_email", "")
+        st.error(
+            "Không truy cập được Google Sheet.\n\n"
+            "• Thường do **chưa share** đúng service account (Editor) hoặc **SHEET_ID sai**.\n"
+            f"• Service account đang dùng: `{sa_email}`\n"
+            f"• Sheet ID: `{SHEET_ID}`\n"
+            "→ Hãy kiểm tra rồi chạy lại."
+        )
+        st.stop()
+
 
 HEADER_MAP = {
     "league_members": ["entry_id","entry_name","player_name","joined_at"],
@@ -152,18 +178,23 @@ def _get_ws(title: str):
             ws.update([headers])
     return ws
 
-def gs_read_df(title: str) -> pd.DataFrame:
-    ws = _get_ws(title)
-    data = ws.get_all_records()
-    if not data:
-        # ensure headers
-        headers = ws.row_values(1)
-        if not headers:
-            headers = HEADER_MAP.get(title, [])
+def _get_ws(title: str):
+    sh = get_sheet()  # đã có try/except ở trên
+    try:
+        return sh.worksheet(title)
+    except gspread.WorksheetNotFound:
+        try:
+            ws = sh.add_worksheet(title=title, rows=1000, cols=20)
+            headers = HEADER_MAP.get(title)
             if headers:
                 ws.update([headers])
-        return pd.DataFrame(columns=headers)
-    return pd.DataFrame(data)
+            return ws
+        except gspread.exceptions.APIError:
+            st.error(
+                f"Không tạo được worksheet '{title}'. Kiểm tra quyền Editor của service account trên Google Sheet."
+            )
+            st.stop()
+
 
 def gs_upsert(title: str, key_cols: List[str], rows: List[dict]):
     if not rows:
