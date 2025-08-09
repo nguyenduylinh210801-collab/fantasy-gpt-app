@@ -107,16 +107,9 @@ div[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
 """, unsafe_allow_html=True)
 
 # ===== Logo + tiêu đề =====
-logo_url = "https://upload.wikimedia.org/wikipedia/en/3/3a/Premier_League_Logo.svg"  # hoặc "logo.png"
-col_logo, col_title = st.columns([0.15, 0.85])
-with col_logo:
-    st.image(logo_url, use_container_width=True)
-with col_title:
-    st.markdown("<h1 style='margin-top:0;'>SO Fantasy Premier League</h1>", unsafe_allow_html=True)
 
 st.title("⚽ SO Fantasy Premier League")
-if INVITE_CODE:
-    st.info(f"👉 Nhập code để tham gia: `{INVITE_CODE}`")
+
 
 # =========================
 # Google Sheets helpers (gspread)
