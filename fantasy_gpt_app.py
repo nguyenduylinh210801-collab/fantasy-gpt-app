@@ -328,6 +328,26 @@ current_gw, finished = get_current_event()
 col2.metric("Current GW", current_gw or "-")
 col3.metric("Finished?", "Yes" if finished else "No")
 
+# === Chẩn đoán kết nối Google Sheets ===
+with st.expander("🔍 Kiểm tra kết nối Google Sheets"):
+    st.write("client_email từ secrets:", (SVC_INFO or {}).get("client_email", "❌ Không thấy"))
+    st.write("GSPREAD_SHEET_ID:", SHEET_ID or "❌ Không thấy")
+    if st.button("Test Google Sheets"):
+        try:
+            sh = get_sheet()   # gọi hàm cache_resource đã có
+            ws = sh.sheet1     # worksheet đầu tiên
+            st.success("✅ Mở được Spreadsheet. Quyền truy cập OK.")
+            st.write("Sheet title:", sh.title, " | First worksheet:", ws.title)
+        except Exception as e:
+            st.error(f"❌ Không mở được Spreadsheet: {e}")
+            st.info(
+                "• Kiểm tra đã SHARE sheet cho client_email quyền Editor.\n"
+                "• Kiểm tra GSPREAD_SHEET_ID đúng (giữa /d/ và /edit).\n"
+                "• Kiểm tra private_key giữ nguyên ký tự \\n.\n"
+                "• Bật Google Sheets API / hoặc policy Workspace."
+            )
+
+
 c1, c2, c3 = st.columns(3)
 if c1.button("Sync members"):
     if league_id:
