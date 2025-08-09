@@ -259,12 +259,18 @@ def get_event_by_id(event_id: int) -> dict:
     return {}
 
 def _fmt_time_local(iso_str: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
-    """Đổi ISO (UTC) -> giờ địa phương đẹp, ví dụ: 17 Aug 2025, 01:30 ICT."""
+    """
+    Đổi ISO (UTC) -> giờ địa phương, luôn hiển thị nhãn ICT thay vì +07.
+    """
+    if not iso_str:
+        return ""
     try:
-        dt = pd.to_datetime(iso_str, utc=True)
-        return dt.tz_convert(tz).strftime("%d %b %Y, %H:%M %Z")
+        dt = pd.to_datetime(iso_str, utc=True).tz_convert(tz)
+        # Ép nhãn ICT cho nhất quán
+        return dt.strftime("%d %b %Y, %H:%M") + " ICT"
     except Exception:
         return iso_str or ""
+
 
 @st.cache_data(ttl=180)
 def get_event_times(event_id: int) -> tuple[str, str, str]:
