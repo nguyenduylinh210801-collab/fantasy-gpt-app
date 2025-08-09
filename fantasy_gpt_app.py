@@ -614,19 +614,21 @@ if INVITE_CODE:
 st.write("")  # spacing nhẹ
 
 # Hàng metric: 3 cột bằng nhau
-m1, m2, m3 = st.columns([1, 1, 1], gap="large")
-with m1:
-    st.metric("League ID", league_id or "-")
-with m2:
+# Hàng metric: 2 cột (ẩn League ID)
+m_left, m_right = st.columns([2, 1], gap="large")
+
+with m_left:
     st.metric("Current GW", f"{current_gw or '-'}")
     if gw_name:
-        st.caption(gw_name)  # ví dụ: "Gameweek 1"
+        st.caption(gw_name)
     if gw_start:
         st.caption(f"Start: {gw_start}")
     if gw_deadline:
         st.caption(f"Deadline: {gw_deadline}")
-with m3:
+
+with m_right:
     st.metric("Finished?", "Yes" if finished else "No")
+
 
 st.write("")  # spacing nhẹ
 
