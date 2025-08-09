@@ -55,6 +55,24 @@ INVITE_CODE   = st.secrets.get("INVITE_CODE", "")
 SHEET_ID      = st.secrets.get("GSPREAD_SHEET_ID")
 SVC_INFO      = st.secrets.get("gcp_service_account")
 
+# ===== League ID input (fix NameError) =====
+def _to_int(s):
+    try:
+        return int(str(s).strip())
+    except:
+        return None
+
+_default_league = FPL_LEAGUE_ID
+league_id = st.sidebar.text_input(
+    "H2H League ID",
+    value=str(_default_league or ""),
+    placeholder="vd: 1007448"
+)
+league_id_int = _to_int(league_id)
+if league_id and league_id_int is None:
+    st.sidebar.error("⚠️ League ID phải là số nguyên.")
+
+
 # =========================
 # Streamlit Page
 # =========================
@@ -518,16 +536,22 @@ col3.metric("Finished?", "Yes" if finished else "No")
 
 c1, c2, c3 = st.columns(3)
 if c1.button("Sync members"):
-    if league_id:
+    if league_id_int:
         with st.spinner("Đang đồng bộ danh sách đội..."):
-            dfm = sync_members_to_db(int(league_id))
+            dfm = sync_members_to_db(league_id_int)
         st.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
+    else:
+        st.error("Thiếu hoặc sai League ID.")
 
 if c2.button("Sync points (current GW)"):
-    if current_gw:
+    if current_gw and league_id_int:
         with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
-            sync_gw_points(current_gw, finished, int(league_id or 0))
+            sync_gw_points(current_gw, finished, league_id_int)
         st.success("Done!")
+    elif not league_id_int:
+        st.error("Thiếu hoặc sai League ID.")
+    else:
+        st.error("Không xác định được Current GW.")
 
 if c3.button("Recompute rank"):
     if current_gw:
