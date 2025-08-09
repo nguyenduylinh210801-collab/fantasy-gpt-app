@@ -596,31 +596,42 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
     mems = gs_select("league_members")
     if mems.empty:
         return pd.DataFrame()
+
     ids = mems["entry_id"].astype(int).tolist()
     names = mems["entry_name"].tolist()
+
     mus, sds = [], []
     for eid in ids:
         mu, sd = fit_mu_sigma(eid, upto_gw=gw-1)
-        mus.append(mu); sds.append(sd)
+        mus.append(mu)
+        sds.append(sd)
+
     M = len(ids)
     draws = np.random.randn(n, M) * np.array(sds) + np.array(mus)
+
     ranks = (-draws).argsort(axis=1).argsort(axis=1) + 1
-    p1 = (ranks==1).mean(axis=0)
-    p2 = (ranks<=2).mean(axis=0)
-    p3 = (ranks<=3).mean(axis=0)
+    # → chuyển sang % luôn (0–100), làm tròn 2 số
+    p1 = (ranks == 1).mean(axis=0) * 100
+    p2 = (ranks <= 2).mean(axis=0) * 100
+    p3 = (ranks <= 3).mean(axis=0) * 100
+
     rows = []
     for i in range(M):
         rows.append({
             "gw": int(gw),
             "entry_id": int(ids[i]),
-            "p_top1": round(float(p1[i]),4),
-            "p_top2": round(float(p2[i]),4),
-            "p_top3": round(float(p3[i]),4),
+            "p_top1": round(float(p1[i]), 2),
+            "p_top2": round(float(p2[i]), 2),
+            "p_top3": round(float(p3[i]), 2),
             "updated_at": pd.Timestamp.utcnow().isoformat(),
         })
+
     if rows:
-        gs_upsert("gw_predictions", ["gw","entry_id"], rows)
-    df = pd.DataFrame(rows); df["entry_name"] = names
+        # Lưu % vào Google Sheets để lần sau đọc lên hiển thị đúng luôn
+        gs_upsert("gw_predictions", ["gw", "entry_id"], rows)
+
+    df = pd.DataFrame(rows)
+    df["entry_name"] = names
     return df.sort_values("p_top1", ascending=False)
 
 # =========================
@@ -709,15 +720,26 @@ with tab2:
             with st.spinner("Đang mô phỏng..."):
                 dfp = simulate_top_probs(current_gw)
                 st.success("Done!")
-        rows = gs_select("gw_predictions", where={"gw":"eq."+str(current_gw)})
+        rows = gs_select("gw_predictions", where={"gw": "eq." + str(current_gw)})
         if not rows.empty:
             mems = gs_select("league_members")
             out = rows.merge(mems, on="entry_id", how="left")
-            out = out[["entry_name","p_top1","p_top2","p_top3"]].sort_values("p_top1", ascending=False)
+
+            # Ép kiểu số & sort giảm dần
+            for c in ["p_top1", "p_top2", "p_top3"]:
+                out[c] = pd.to_numeric(out[c], errors="coerce")
+            out = out.sort_values("p_top1", ascending=False)
+
+            # Thêm ký hiệu % khi render
+            show = out[["entry_name", "p_top1", "p_top2", "p_top3"]].copy()
+            for c in ["p_top1", "p_top2", "p_top3"]:
+                show[c] = show[c].map(lambda v: f"{v:.2f}%" if pd.notna(v) else "")
+
             st.subheader(f"Xác suất Top 1/2/3 — GW{current_gw}")
-            st.dataframe(out, use_container_width=True)
+            st.dataframe(show, use_container_width=True)
         else:
             st.info("Chưa có kết quả mô phỏng.")
+
 
 with tab3:
     st.write("League members (Sheet):")
