@@ -248,6 +248,42 @@ def get_current_event():
         return done[-1]["id"], True
     return None, True
 
+@st.cache_data(ttl=180)
+def get_event_by_id(event_id: int) -> dict:
+    if not event_id:
+        return {}
+    data = get_bootstrap()
+    for e in data.get("events", []):
+        if e.get("id") == event_id:
+            return e
+    return {}
+
+def _fmt_time_local(iso_str: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
+    """Đổi ISO (UTC) -> giờ địa phương đẹp, ví dụ: 17 Aug 2025, 01:30 ICT."""
+    try:
+        dt = pd.to_datetime(iso_str, utc=True)
+        return dt.tz_convert(tz).strftime("%d %b %Y, %H:%M %Z")
+    except Exception:
+        return iso_str or ""
+
+@st.cache_data(ttl=180)
+def get_event_times(event_id: int) -> tuple[str, str, str]:
+    """
+    Trả về (gw_name, start_time_local, deadline_local).
+    start_time ≈ deadline của GW trước (FPL không có trường start_time riêng).
+    """
+    data = get_bootstrap()
+    events = data.get("events", [])
+    ev = next((e for e in events if e.get("id") == event_id), None)
+    if not ev:
+        return ("", "", "")
+    gw_name = ev.get("name", "")
+    deadline_local = _fmt_time_local(ev.get("deadline_time"))
+    prev_ev = next((e for e in events if e.get("id") == event_id - 1), None)
+    start_local = _fmt_time_local(prev_ev.get("deadline_time")) if prev_ev else ""
+    return (gw_name, start_local, deadline_local)
+
+
 # =========================
 # LIVE POINTS (picks + live + autosubs + chips)
 # =========================
@@ -560,6 +596,7 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
 # UI Controls (đẹp & cân đối)
 # =========================
 current_gw, finished = get_current_event()
+gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
 if INVITE_CODE:
@@ -575,7 +612,13 @@ m1, m2, m3 = st.columns([1, 1, 1], gap="large")
 with m1:
     st.metric("League ID", league_id or "-")
 with m2:
-    st.metric("Current GW", current_gw or "-")
+    st.metric("Current GW", f"{current_gw or '-'}")
+    if gw_name:
+        st.caption(gw_name)  # ví dụ: "Gameweek 1"
+    if gw_start:
+        st.caption(f"Start: {gw_start}")
+    if gw_deadline:
+        st.caption(f"Deadline: {gw_deadline}")
 with m3:
     st.metric("Finished?", "Yes" if finished else "No")
 
