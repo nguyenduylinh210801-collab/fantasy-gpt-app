@@ -72,17 +72,6 @@ league_id_int = _to_int(league_id)
 if league_id and league_id_int is None:
     st.sidebar.error("⚠️ League ID phải là số nguyên.")
 
-# Sidebar controls
-st.sidebar.header("⚙️ Cài đặt")
-
-if st.sidebar.button("Test Google Sheets"):
-    try:
-        sh = get_sheet()
-        wss = [ws.title for ws in sh.worksheets()]
-        st.sidebar.success(f"Kết nối OK. Worksheets: {wss}")
-    except Exception as e:
-        st.sidebar.error(f"Lỗi GS: {e}")
-
 
 # =========================
 # Streamlit Page
@@ -276,6 +265,17 @@ def gs_select(table: str, where: Dict[str, str] = None, select: List[str] = None
         cols = [c for c in select if c in df.columns]
         df = df[cols]
     return df.reset_index(drop=True)
+
+# Sidebar controls
+st.sidebar.header("⚙️ Cài đặt")
+
+if st.sidebar.button("Test Google Sheets"):
+    try:
+        sh = get_sheet()
+        wss = [ws.title for ws in sh.worksheets()]
+        st.sidebar.success(f"Kết nối OK. Worksheets: {wss}")
+    except Exception as e:
+        st.sidebar.error(f"Lỗi GS: {e}")
 
 
 # =========================
