@@ -1,4 +1,7 @@
 streamlit
-matplotlib
-requests
 pandas
+numpy
+requests
+gspread
+google-auth
+matplotlib
