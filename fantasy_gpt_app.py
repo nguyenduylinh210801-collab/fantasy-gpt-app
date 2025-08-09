@@ -125,6 +125,9 @@ st.title("⚽ SO Fantasy Premier League")
 # =========================
 # Google Sheets helpers (gspread)
 # =========================
+# =========================
+# Google Sheets helpers (gspread)
+# =========================
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -158,7 +161,6 @@ def get_sheet():
         )
         st.stop()
 
-
 HEADER_MAP = {
     "league_members": ["entry_id","entry_name","player_name","joined_at"],
     "gw_scores": ["entry_id","gw","points","live","updated_at"],
@@ -169,18 +171,6 @@ HEADER_MAP = {
 def _get_ws(title: str):
     sh = get_sheet()
     try:
-        ws = sh.worksheet(title)
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=title, rows=1000, cols=20)
-        # write headers if known
-        headers = HEADER_MAP.get(title)
-        if headers:
-            ws.update([headers])
-    return ws
-
-def _get_ws(title: str):
-    sh = get_sheet()  # đã có try/except ở trên
-    try:
         return sh.worksheet(title)
     except gspread.WorksheetNotFound:
         try:
@@ -189,12 +179,45 @@ def _get_ws(title: str):
             if headers:
                 ws.update([headers])
             return ws
-        except gspread.exceptions.APIError:
+        except Exception:
             st.error(
-                f"Không tạo được worksheet '{title}'. Kiểm tra quyền Editor của service account trên Google Sheet."
+                f"Không tạo được worksheet '{title}'. "
+                "Hãy kiểm tra: GSPREAD_SHEET_ID đúng chưa, và service account có quyền Editor trên Google Sheet chưa."
             )
-            st.stop()
+            raise  # để gs_read_df/gs_upsert bắt và fail mềm
 
+def gs_read_df(title: str) -> pd.DataFrame:
+    """
+    Đọc dữ liệu từ Google Sheets, nếu lỗi trả DF rỗng với cột từ HEADER_MAP (UI không sập).
+    """
+    try:
+        ws = _get_ws(title)
+    except Exception as e:
+        st.error(f"❌ Lỗi mở worksheet '{title}': {e}")
+        return pd.DataFrame(columns=HEADER_MAP.get(title, []))
+
+    try:
+        data = ws.get_all_records()
+    except Exception as e:
+        st.error(f"❌ Lỗi đọc worksheet '{title}': {e}")
+        return pd.DataFrame(columns=HEADER_MAP.get(title, []))
+
+    if not data:
+        # đảm bảo có header
+        try:
+            headers = ws.row_values(1)
+        except Exception:
+            headers = HEADER_MAP.get(title, [])
+        if not headers:
+            headers = HEADER_MAP.get(title, [])
+            if headers:
+                try:
+                    ws.update([headers])
+                except Exception:
+                    pass
+        return pd.DataFrame(columns=headers)
+
+    return pd.DataFrame(data)
 
 def gs_upsert(title: str, key_cols: List[str], rows: List[dict]):
     if not rows:
@@ -219,16 +242,18 @@ def gs_upsert(title: str, key_cols: List[str], rows: List[dict]):
         df_out = df_out[headers]
         df_out.reset_index(drop=True, inplace=True)
     # Write back (overwrite sheet)
-    ws = _get_ws(title)
-    ws.clear()
-    ws.update([headers] + df_out.astype(object).fillna("").values.tolist())
+    try:
+        ws = _get_ws(title)
+        ws.clear()
+        ws.update([headers] + df_out.astype(object).fillna("").values.tolist())
+    except Exception as e:
+        st.error(f"❌ Lỗi ghi '{title}' lên Google Sheets: {e}")
 
-# convenience selects
 def gs_select(table: str, where: Dict[str, str] = None, select: List[str] = None) -> pd.DataFrame:
     df = gs_read_df(table)
-    if where:
+    if where is not None and not df.empty:
         for k, v in where.items():
-            # support ops like eq.5, lte.10
+            # hỗ trợ eq./lte./gte./lt./gt.
             if isinstance(v, str) and "." in v:
                 op, val = v.split(".", 1)
                 try:
@@ -251,6 +276,7 @@ def gs_select(table: str, where: Dict[str, str] = None, select: List[str] = None
         cols = [c for c in select if c in df.columns]
         df = df[cols]
     return df.reset_index(drop=True)
+
 
 # =========================
 # FPL API helpers
