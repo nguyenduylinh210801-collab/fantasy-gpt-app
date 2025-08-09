@@ -190,6 +190,11 @@ def get_current_event():
     for e in events:
         if e.get("is_current"):
             return e["id"], e.get("finished", False)
+    # Nếu không có vòng current → lấy vòng sắp diễn ra (is_next)
+    for e in events:
+        if e.get("is_next"):
+            return e["id"], False
+    # Nếu cũng không có → lấy vòng cuối đã kết thúc
     done = [e for e in events if e.get("finished")] or []
     if done:
         return done[-1]["id"], True
