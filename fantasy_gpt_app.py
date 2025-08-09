@@ -507,7 +507,6 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
 # UI Controls
 # =========================
 col1, col2, col3 = st.columns([2,1,1])
-league_id = col1.text_input("H2H League ID", value=str(FPL_LEAGUE_ID or ""))
 current_gw, finished = get_current_event()
 col2.metric("Current GW", current_gw or "-")
 col3.metric("Finished?", "Yes" if finished else "No")
@@ -569,11 +568,3 @@ with tab3:
     if current_gw:
         st.write(f"GW{current_gw} scores:")
         st.dataframe(gs_select("gw_scores", where={"gw":"eq."+str(current_gw)}), use_container_width=True)
-
-# =========================
-# Notes / Future work
-# =========================
-# - For truly live points (ongoing GW), integrate picks API:
-#   /entry/{id}/event/{gw}/picks + /event/{gw}/live to account for captain, autosubs, chips
-# - Add H2H 3-1-0 standings by parsing fixtures in /leagues-h2h-matches/ endpoints.
-# - Add historical backfill loop to populate past GWs automatically on first run.
