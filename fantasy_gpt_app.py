@@ -465,24 +465,49 @@ def get_h2h_members(league_id: int, page: int = 1):
 
 @st.cache_data(ttl=180)
 def fetch_all_members(league_id: int) -> List[dict]:
+    """
+    Lấy member cho H2H league.
+    - Trong preseason/GW1 chưa diễn ra: standings có thể rỗng -> fallback sang new_entries.results
+    """
     page = 1
-    rows = []
+    rows: List[dict] = []
     while True:
         data = get_h2h_members(league_id, page)
-        standings = data.get("standings", {})
-        results = standings.get("results", [])
-        if not results:
+        standings = (data or {}).get("standings", {}) or {}
+        s_results = standings.get("results", []) or []
+        # Fallback: trước GW1, danh sách nằm ở new_entries.results
+        if not s_results:
+            new_entries = (data or {}).get("new_entries", {}) or {}
+            s_results = new_entries.get("results", []) or []
+
+        if not s_results:
             break
-        for r in results:
+
+        for r in s_results:
+            # r có thể có player_name, hoặc player_first_name/last_name
+            player_name = r.get("player_name") \
+                or " ".join([str(r.get("player_first_name", "")).strip(),
+                             str(r.get("player_last_name", "")).strip()]).strip()
             rows.append({
-                "entry_id": r["entry"],
-                "entry_name": r["entry_name"],
-                "player_name": r["player_name"],
+                "entry_id": r.get("entry"),
+                "entry_name": r.get("entry_name"),
+                "player_name": player_name,
                 "joined_at": pd.Timestamp.utcnow().isoformat(),
             })
-        if not standings.get("has_next"):
-            break
-        page += 1
+
+        # phân trang theo standings nếu có, nếu không thì theo new_entries
+        has_next = standings.get("has_next")
+        if has_next:
+            page += 1
+            continue
+
+        new_entries = (data or {}).get("new_entries", {}) or {}
+        if new_entries.get("has_next"):
+            page += 1
+            continue
+
+        break
+
     return rows
 
 # Entry history → official points per finished GW
