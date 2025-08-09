@@ -59,9 +59,9 @@ SVC_INFO      = st.secrets.get("gcp_service_account")
 # Streamlit Page
 # =========================
 st.set_page_config(page_title="FPL H2H Tracker", page_icon="⚽", layout="wide")
-st.title("⚽ FPL H2H Tracker — Auto Points, Rank & Top%")
+st.title("⚽ SO Fantasy Premier League")
 if INVITE_CODE:
-    st.info(f"👉 Mã mời vào league: `{INVITE_CODE}`")
+    st.info(f"👉 Nhập code để tham gia: `{INVITE_CODE}`")
 
 # =========================
 # Google Sheets helpers (gspread)
@@ -195,6 +195,172 @@ def get_current_event():
         return done[-1]["id"], True
     return None, True
 
+# =========================
+# LIVE POINTS (picks + live + autosubs + chips)
+# =========================
+
+@st.cache_data(ttl=180)
+def get_entry_picks(entry_id: int, gw: int):
+    r = SESSION.get(f"{BASE}/entry/{entry_id}/event/{gw}/picks/")
+    r.raise_for_status()
+    return r.json()  # contains: picks, active_chip, automatic_subs (sau khi GW kết thúc)
+
+@st.cache_data(ttl=60)
+def get_event_live(gw: int):
+    r = SESSION.get(f"{BASE}/event/{gw}/live/")
+    r.raise_for_status()
+    return r.json()  # contains: elements -> stats.total_points, stats.minutes,...
+
+@st.cache_data(ttl=3600)
+def get_elements_index():
+    """Map element id -> element_type (1=GK,2=DEF,3=MID,4=FWD)."""
+    bs = get_bootstrap()
+    return {e["id"]: e["element_type"] for e in bs.get("elements", [])}
+
+def _live_maps(gw: int):
+    """Return (points_map, minutes_map) for the GW."""
+    live = get_event_live(gw)
+    pts_map, min_map = {}, {}
+    for e in live.get("elements", []):
+        el_id = e["id"]
+        s = e.get("stats", {}) or {}
+        pts_map[el_id] = int(s.get("total_points", 0))
+        min_map[el_id] = int(s.get("minutes", 0))
+    return pts_map, min_map
+
+def _count_types(elems, elem_type_map):
+    # elems: list of element ids
+    from collections import Counter
+    c = Counter([elem_type_map.get(x, 0) for x in elems])
+    return {
+        1: c.get(1, 0),  # GK
+        2: c.get(2, 0),  # DEF
+        3: c.get(3, 0),  # MID
+        4: c.get(4, 0),  # FWD
+    }
+
+def _formation_ok(counts):
+    """FPL min formation: 1 GK, >=3 DEF, >=2 MID, >=1 FWD, total 11."""
+    total = sum(counts.values())
+    return (
+        counts[1] == 1 and
+        counts[2] >= 3 and
+        counts[3] >= 2 and
+        counts[4] >= 1 and
+        total == 11
+    )
+
+def _apply_basic_autosubs(starters, bench_order, minutes_map, elem_type_map, captain_id, vice_id, triple_captain=False):
+    """
+    starters: list of 11 element ids
+    bench_order: list of 4 element ids in bench order 12..15
+    Return: (final_eleven, new_captain_id)
+    - Rule: replace starters with 0' by bench players (>0') in bench order if formation remains valid.
+    - Captain/vice: if captain 0' and vice >0', vice becomes (triple) captain.
+    """
+    playing = [e for e in starters if minutes_map.get(e, 0) > 0]
+    dnp = [e for e in starters if minutes_map.get(e, 0) == 0]
+
+    # Try to sub in bench players (who played) one-by-one
+    final = playing.copy()
+    for b in bench_order:
+        if minutes_map.get(b, 0) == 0:
+            continue
+        if not dnp:
+            break
+        # try replacing a dnp that keeps formation valid
+        replaced = None
+        for s in list(dnp):
+            test = final + [b] + [x for x in dnp if x != s]  # naive check needs exactly 11; we’ll emulate:
+            # Build test eleven: final + b + remaining dnp minus one s
+            test_eleven = final + [b]  # add bench player
+            # add remaining dnp except the one removed until reach 11 (but we want exactly 11: final size may be <11)
+            # The proper approach: final currently <11; choose one dnp to DROP, not add others.
+            # So recompute from starters: (starters - {s}) U {b} U (others that played already accounted in 'final')
+            # Simpler: construct from current starters swap s->b
+            starters_candidate = [x if x != s else b for x in starters]
+            counts = _count_types([x for x in starters_candidate if minutes_map.get(x, 0) > 0 or x == b], elem_type_map)
+            # Ensure we are evaluating exactly 11 on the pitch:
+            eleven = []
+            for x in starters_candidate:
+                # choose played ones; if x==b, it's coming from bench and plays >0
+                if x == b or minutes_map.get(x, 0) > 0:
+                    eleven.append(x)
+            # If still <11 due to multiple DNPs, we'll keep swapping in subsequent iterations
+            # Check formation only when we have <=11; we accept intermediate states <11
+            if len(eleven) <= 11:
+                # When not yet 11, we can't fully validate; accept swap and continue
+                replaced = s
+                starters = starters_candidate
+                dnp.remove(s)
+                final = [x for x in eleven]  # recomputed playing so far
+                break
+        if replaced is None:
+            # couldn't find a valid swap (formation-wise); skip this bench
+            continue
+
+    # If after all subs we still have <11 (e.g., no bench played), formation check not needed
+    # Captain/vice adjustment
+    new_captain = captain_id
+    cap_minutes = minutes_map.get(captain_id, 0)
+    vice_minutes = minutes_map.get(vice_id, 0)
+    if cap_minutes == 0 and vice_minutes > 0:
+        new_captain = vice_id
+
+    # Ensure exactly 11 returned; if more (shouldn't), trim; if less, accept as-is for scoring (FPL would end with <11)
+    final_eleven = final[:11]
+    return final_eleven, new_captain
+
+def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
+    """
+    Returns estimated LIVE points for entry using picks + live + basic autosubs + chips.
+    If Triple Captain active -> captain*3; if Bench Boost -> bench contribute; Free Hit handled by API picks already.
+    """
+    picks = get_entry_picks(entry_id, gw)
+    pts_map, min_map = _live_maps(gw)
+    elem_type_map = get_elements_index()
+
+    active_chip = picks.get("active_chip")  # 'triple_captain', 'bench_boost', 'freehit', 'wildcard' or None
+    is_bb = (active_chip == "bench_boost")
+    is_tc = (active_chip == "triple_captain")
+
+    # picks["picks"] has fields: element, position (1..15), is_captain, is_vice_captain, multiplier (effective)
+    plist = sorted(picks.get("picks", []), key=lambda x: x.get("position", 99))
+    starters = [p["element"] for p in plist if p.get("position", 99) <= 11]
+    bench = [p["element"] for p in plist if p.get("position", 99) > 11]
+    captain_id = next((p["element"] for p in plist if p.get("is_captain")), None)
+    vice_id    = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
+
+    # Basic autosubs estimation (only during live; official autosubs applied after GW ends)
+    final_eleven, new_captain = _apply_basic_autosubs(
+        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
+    )
+
+    # Build multipliers:
+    # - Default starters multiplier = 1; bench = 0 (unless Bench Boost)
+    # - Captain = x2 (or x3 if Triple Captain)
+    mult = {el: 0 for el in starters + bench}
+    for el in final_eleven:
+        mult[el] = 1
+    if is_bb:
+        # On Bench Boost: all bench contribute with 1 regardless of autosubs
+        for el in bench:
+            mult[el] = 1
+
+    # Captain handling:
+    if new_captain is not None:
+        mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
+        # If original captain also in final_eleven and different from new_captain (edge case), ensure its base 1 only
+        if captain_id and captain_id != new_captain and captain_id in mult:
+            mult[captain_id] = 0 if not is_bb else mult[captain_id]  # captain DNP; under BB bench rule may still be 1
+
+    # Sum points
+    total = 0
+    for el, m in mult.items():
+        p = pts_map.get(el, 0)
+        total += p * m
+    return int(total)
+
 # H2H members (pagination)
 def get_h2h_members(league_id: int, page: int = 1):
     url = f"{BASE}/leagues-h2h/{league_id}/standings/?page_standings={page}"
@@ -245,22 +411,40 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
     dfm = gs_read_df("league_members")
     if dfm.empty:
         dfm = pd.DataFrame(fetch_all_members(int(league_id)))
+
     rows = []
     for _, m in dfm.iterrows():
         entry_id = int(m["entry_id"])
-        h = get_entry_history(entry_id)
-        current = h.get("current", [])
-        row = next((r for r in current if r.get("event") == gw), None)
-        pts = int(row.get("points", 0)) if row else 0
+        if finished:
+            # dùng official từ history khi GW đã kết thúc
+            h = get_entry_history(entry_id)
+            current = h.get("current", [])
+            row = next((r for r in current if r.get("event") == gw), None)
+            pts = int(row.get("points", 0)) if row else 0
+            is_live = False
+        else:
+            # dùng LIVE points (picks + live + autosubs + chips)
+            try:
+                pts = compute_live_points_for_entry(entry_id, gw)
+            except Exception:
+                # fallback an toàn nếu picks API lỗi
+                h = get_entry_history(entry_id)
+                current = h.get("current", [])
+                row = next((r for r in current if r.get("event") == gw), None)
+                pts = int(row.get("points", 0)) if row else 0
+            is_live = True
+
         rows.append({
             "entry_id": entry_id,
             "gw": int(gw),
-            "points": pts,
-            "live": (not finished),
+            "points": int(pts),
+            "live": is_live,
             "updated_at": pd.Timestamp.utcnow().isoformat(),
         })
+
     if rows:
         gs_upsert("gw_scores", ["entry_id","gw"], rows)
+
 
 def recompute_rank(gw: int) -> pd.DataFrame:
     df_scores = gs_select("gw_scores", where={"gw":"eq."+str(gw)})
@@ -327,26 +511,6 @@ league_id = col1.text_input("H2H League ID", value=str(FPL_LEAGUE_ID or ""))
 current_gw, finished = get_current_event()
 col2.metric("Current GW", current_gw or "-")
 col3.metric("Finished?", "Yes" if finished else "No")
-
-# === Chẩn đoán kết nối Google Sheets ===
-with st.expander("🔍 Kiểm tra kết nối Google Sheets"):
-    st.write("client_email từ secrets:", (SVC_INFO or {}).get("client_email", "❌ Không thấy"))
-    st.write("GSPREAD_SHEET_ID:", SHEET_ID or "❌ Không thấy")
-    if st.button("Test Google Sheets"):
-        try:
-            sh = get_sheet()   # gọi hàm cache_resource đã có
-            ws = sh.sheet1     # worksheet đầu tiên
-            st.success("✅ Mở được Spreadsheet. Quyền truy cập OK.")
-            st.write("Sheet title:", sh.title, " | First worksheet:", ws.title)
-        except Exception as e:
-            st.error(f"❌ Không mở được Spreadsheet: {e}")
-            st.info(
-                "• Kiểm tra đã SHARE sheet cho client_email quyền Editor.\n"
-                "• Kiểm tra GSPREAD_SHEET_ID đúng (giữa /d/ và /edit).\n"
-                "• Kiểm tra private_key giữ nguyên ký tự \\n.\n"
-                "• Bật Google Sheets API / hoặc policy Workspace."
-            )
-
 
 c1, c2, c3 = st.columns(3)
 if c1.button("Sync members"):
