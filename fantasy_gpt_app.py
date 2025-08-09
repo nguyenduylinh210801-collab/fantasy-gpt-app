@@ -77,6 +77,43 @@ if league_id and league_id_int is None:
 # Streamlit Page
 # =========================
 st.set_page_config(page_title="FPL H2H Tracker", page_icon="⚽", layout="wide")
+# ===== CSS tùy chỉnh =====
+st.markdown("""
+<style>
+/* Thu gọn khoảng trắng tổng thể */
+.block-container { padding-top: 1.25rem; padding-bottom: 1rem; }
+
+/* Card nhẹ cho banner/information */
+.app-note {
+  background: #eef6ff; border: 1px solid #d6e6ff; padding: .75rem 1rem;
+  border-radius: 12px; font-size: 0.95rem;
+}
+
+/* Hàng metric cân giữa, chữ to hơn chút */
+[data-testid="stMetricValue"] { font-size: 1.6rem; }
+
+/* Nút to, đều nhau, bo tròn */
+.stButton > button {
+  width: 100%; border-radius: 12px; padding: .6rem 1rem; font-weight: 600;
+}
+
+/* Tabs spacing đẹp hơn */
+.stTabs [data-baseweb="tab-list"] { gap: .5rem; }
+.stTabs [data-baseweb="tab"] { padding: .45rem .9rem; border-radius: 10px; }
+
+/* Dataframe gọn */
+div[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# ===== Logo + tiêu đề =====
+logo_url = "https://upload.wikimedia.org/wikipedia/en/3/3a/Premier_League_Logo.svg"  # hoặc "logo.png"
+col_logo, col_title = st.columns([0.15, 0.85])
+with col_logo:
+    st.image(logo_url, use_container_width=True)
+with col_title:
+    st.markdown("<h1 style='margin-top:0;'>SO Fantasy Premier League</h1>", unsafe_allow_html=True)
+
 st.title("⚽ SO Fantasy Premier League")
 if INVITE_CODE:
     st.info(f"👉 Nhập code để tham gia: `{INVITE_CODE}`")
@@ -527,37 +564,59 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
     return df.sort_values("p_top1", ascending=False)
 
 # =========================
-# UI Controls
+# UI Controls (đẹp & cân đối)
 # =========================
-col1, col2, col3 = st.columns([2,1,1])
 current_gw, finished = get_current_event()
-col2.metric("Current GW", current_gw or "-")
-col3.metric("Finished?", "Yes" if finished else "No")
 
-c1, c2, c3 = st.columns(3)
-if c1.button("Sync members"):
-    if league_id_int:
-        with st.spinner("Đang đồng bộ danh sách đội..."):
-            dfm = sync_members_to_db(league_id_int)
-        st.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
-    else:
-        st.error("Thiếu hoặc sai League ID.")
+# Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
+if INVITE_CODE:
+    st.markdown(
+        f'<div class="app-note">👉 Nhập code để tham gia: <b>{INVITE_CODE}</b></div>',
+        unsafe_allow_html=True
+    )
 
-if c2.button("Sync points (current GW)"):
-    if current_gw and league_id_int:
-        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
-            sync_gw_points(current_gw, finished, league_id_int)
-        st.success("Done!")
-    elif not league_id_int:
-        st.error("Thiếu hoặc sai League ID.")
-    else:
-        st.error("Không xác định được Current GW.")
+st.write("")  # spacing nhẹ
 
-if c3.button("Recompute rank"):
-    if current_gw:
-        with st.spinner("Tính BXH..."):
-            pass  # will recompute inside tab
-        st.success("Done!")
+# Hàng metric: 3 cột bằng nhau
+m1, m2, m3 = st.columns([1, 1, 1], gap="large")
+with m1:
+    st.metric("League ID", league_id or "-")
+with m2:
+    st.metric("Current GW", current_gw or "-")
+with m3:
+    st.metric("Finished?", "Yes" if finished else "No")
+
+st.write("")  # spacing nhẹ
+
+# Hàng nút: 3 nút đều nhau, full width
+b1, b2, b3 = st.columns(3, gap="large")
+
+with b1:
+    if st.button("Sync members", use_container_width=True):
+        if league_id_int:
+            with st.spinner("Đang đồng bộ danh sách đội..."):
+                dfm = sync_members_to_db(league_id_int)
+            st.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
+        else:
+            st.error("Thiếu hoặc sai League ID.")
+
+with b2:
+    if st.button("Sync points (current GW)", use_container_width=True):
+        if current_gw and league_id_int:
+            with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
+                sync_gw_points(current_gw, finished, league_id_int)
+            st.success("Done!")
+        elif not league_id_int:
+            st.error("Thiếu hoặc sai League ID.")
+        else:
+            st.error("Không xác định được Current GW.")
+
+with b3:
+    if st.button("Recompute rank", use_container_width=True):
+        if current_gw:
+            with st.spinner("Tính BXH..."):
+                pass  # (giữ logic hiện tại: đang tính trong tab)
+            st.success("Done!")
 
 st.divider()
 
