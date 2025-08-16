@@ -492,24 +492,24 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     # - Default starters multiplier = 1; bench = 0 (unless Bench Boost)
     # - Captain = x2 (or x3 if Triple Captain)
     # Reset multipliers
+    # Reset multipliers về 0 cho tất cả
     mult = {el: 0 for el in starters + bench}
 
-    # Chỉ tính đúng 11 người sau autosubs
+    # Chỉ tính điểm cho đúng 11 người cuối cùng sau autosubs
+    final_eleven = final_eleven[:11]
     for el in final_eleven:
         mult[el] = 1
 
-    # Nếu Bench Boost chip thì mới thêm toàn bộ bench
+    # Nếu Bench Boost → tính điểm cả bench luôn
     if is_bb:
         for el in bench:
             mult[el] = 1
 
-
-    # Captain handling:
+    # Captain xử lý riêng: x2 hoặc x3
     if new_captain is not None:
         mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
-        # If original captain also in final_eleven and different from new_captain (edge case), ensure its base 1 only
         if captain_id and captain_id != new_captain and captain_id in mult:
-            mult[captain_id] = 0 if not is_bb else mult[captain_id]  # captain DNP; under BB bench rule may still be 1
+            mult[captain_id] = 0 if not is_bb else mult[captain_id]
 
     # Sum points
     total = 0
