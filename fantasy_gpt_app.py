@@ -467,6 +467,7 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     """
     Returns estimated LIVE points for entry using picks + live + basic autosubs + chips.
     If Triple Captain active -> captain*3; if Bench Boost -> bench contribute; Free Hit handled by API picks already.
+    Only 11 valid starters counted, unless Bench Boost chip is active.
     """
     picks = get_entry_picks(entry_id, gw)
     pts_map, min_map = _live_maps(gw)
@@ -487,30 +488,35 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
         starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
     )
 
-    # Reset multipliers
-    mult = {el: 0 for el in starters + bench}
+    # Ensure only 11 players unless Bench Boost
+    if not is_bb:
+        final_eleven = final_eleven[:11]
 
-    # Ensure only 11 players are counted unless Bench Boost
-    final_eleven = final_eleven[:11]
+    # Build multipliers: default = 0
+    mult = {el: 0 for el in starters + bench}
     for el in final_eleven:
         mult[el] = 1
 
+    # Bench Boost adds bench regardless of autosub
     if is_bb:
         for el in bench:
             mult[el] = 1
 
-    # Captain multiplier
+    # Captain/vice-captain points handling
     if new_captain is not None:
         mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
+        # Captain bị thay (không ra sân) thì không cộng điểm, trừ khi Bench Boost
         if captain_id and captain_id != new_captain and captain_id in mult:
             mult[captain_id] = 0 if not is_bb else mult[captain_id]
 
+    # Calculate total points
     total = 0
     for el, m in mult.items():
         p = pts_map.get(el, 0)
         total += p * m
 
     return int(total)
+
 
 
 # H2H members (pagination)
