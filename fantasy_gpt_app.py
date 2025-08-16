@@ -651,7 +651,10 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
         else:
             # dùng LIVE points (picks + live + autosubs + chips)
             try:
-                pts = compute_live_points_for_entry(entry_id, gw)
+                picks = get_entry_picks(entry_id, gw)
+                chip = picks.get("active_chip", "")
+                pts = compute_live_points_for_entry(entry_id, gw, active_chip=chip)
+
             except Exception:
                 # fallback an toàn nếu picks API lỗi
                 h = get_entry_history(entry_id)
@@ -665,6 +668,7 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
             "gw": int(gw),
             "points": int(pts),
             "live": is_live,
+            "chip": chip,
             "updated_at": pd.Timestamp.utcnow().isoformat(),
         })
 
