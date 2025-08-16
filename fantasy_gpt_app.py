@@ -510,10 +510,7 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
             mult[captain_id] = 0 if not is_bb else mult[captain_id]
 
     # Calculate total points
-    total = 0
-    for el, m in mult.items():
-        p = pts_map.get(el, 0)
-        total += p * m
+    total = sum(pts_map.get(el, 0) * m for el, m in mult.items() if m > 0)
 
     return int(total)
 
