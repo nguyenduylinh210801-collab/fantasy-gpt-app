@@ -798,9 +798,12 @@ with tab1:
     if current_gw:
         st.subheader(f"BXH theo điểm đúng luật — GW{current_gw}")
 
-        # Dùng điểm chính thức hoặc live (11 người + autosub + captain x2)
         dfm = gs_select("league_members")
-        entry_ids = dfm["entry_id"].astype(int).tolist() if not dfm.empty else []
+        entry_ids = dfm["entry_id"].astype(int).tolist()
+
+        # ✅ Tạo biến cần thiết
+        player_name_map = dict(zip(dfm["entry_id"], dfm["player_name"]))
+        entry_chip_map = dict(zip(dfm["entry_id"], dfm["chip"].fillna("")))
 
         if not entry_ids:
             st.info("Chưa có đội nào. Bấm 'Sync members'.")
@@ -809,7 +812,6 @@ with tab1:
             df = pd.DataFrame(rankings)
             st.dataframe(df, use_container_width=True)
 
-            # Ghi điểm chính thức nếu vòng đã kết thúc
             if is_gameweek_finished(current_gw):
                 if st.button("🔒 Ghi điểm chính thức"):
                     persist_final_gw_scores(entry_ids, current_gw)
