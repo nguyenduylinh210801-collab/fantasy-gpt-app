@@ -152,7 +152,7 @@ def get_sheet():
 
 HEADER_MAP = {
     "league_members": ["entry_id","entry_name","player_name","joined_at"],
-    "gw_scores": ["entry_id","gw","points","live","updated_at"],
+    "gw_scores": ["entry_id","gw","points","live","chip","updated_at"],
     "gw_rank": ["gw","entry_id","rank","points"],
     "gw_predictions": ["gw","entry_id","p_top1","p_top2","p_top3","updated_at"],
 }
@@ -475,17 +475,21 @@ def is_gameweek_finished(gw: int) -> bool:
     return False
 
 def get_final_or_live_points(entry_id: int, gw: int) -> int:
-    if is_gameweek_finished(gw) and gw_scores.get(entry_id, {}).get("points") is not None:
-        return gw_scores[entry_id]["points"]
+    info = gw_scores.get(entry_id)
+    if info and "points" in info:
+        return info["points"]
     else:
-        return compute_live_points_for_entry(entry_id, gw)
+        chip = info.get("chip", "") if info else ""
+        return compute_live_points_for_entry(entry_id, gw, active_chip=chip)
 
-def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
+
+def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = None) -> int:
     picks = get_entry_picks(entry_id, gw)
     pts_map, min_map = _live_maps(gw)
     elem_type_map = get_elements_index()
 
-    active_chip = picks.get("active_chip")
+    if active_chip is None:
+        active_chip = picks.get("active_chip", "")
     is_bb = (active_chip == "bench_boost")
     is_tc = (active_chip == "triple_captain")
 
@@ -519,10 +523,21 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     return int(total)
 
 def persist_final_gw_scores(entry_ids: list[int], gw: int):
+    rows = []
     for entry_id in entry_ids:
-        pts = compute_live_points_for_entry(entry_id, gw)
-        gw_scores[entry_id] = {"points": pts}
-    save_gw_scores_to_sheet(gw, gw_scores)
+        picks = get_entry_picks(entry_id, gw)
+        active_chip = picks.get("active_chip", "")
+        pts = compute_live_points_for_entry(entry_id, gw, active_chip=active_chip)
+        rows.append({
+            "entry_id": entry_id,
+            "gw": gw,
+            "points": pts,
+            "live": False,
+            "chip": active_chip,
+            "updated_at": pd.Timestamp.utcnow().isoformat()
+        })
+    gs_upsert("gw_scores", ["entry_id", "gw"], rows)
+
 
 # ✅ SỬA BXH:
 # ❌ Sai: dùng gw_scores[entry_id]["points"]
@@ -816,7 +831,10 @@ with tab1:
         # ✅ Load điểm chính thức đã ghi (nếu có)
         df_scores = gs_select("gw_scores", where={"gw": "eq." + str(current_gw)})
         gw_scores = {
-            int(row["entry_id"]): {"points": int(row["points"])}
+            int(row["entry_id"]): {
+                "points": int(row["points"]),
+                "chip": row.get("chip", "")
+            }
             for _, row in df_scores.iterrows()
             if str(row.get("points", "")).strip() != ""
         }
