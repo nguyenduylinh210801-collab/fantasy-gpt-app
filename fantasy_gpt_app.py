@@ -491,13 +491,18 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     # Build multipliers:
     # - Default starters multiplier = 1; bench = 0 (unless Bench Boost)
     # - Captain = x2 (or x3 if Triple Captain)
+    # Reset multipliers
     mult = {el: 0 for el in starters + bench}
+
+    # Chỉ tính đúng 11 người sau autosubs
     for el in final_eleven:
         mult[el] = 1
-    if is_bb:
-        # On Bench Boost: all bench contribute with 1 regardless of autosubs
-        for el in bench:
-            mult[el] = 1
+
+# Nếu Bench Boost chip thì mới thêm toàn bộ bench
+if is_bb:
+    for el in bench:
+        mult[el] = 1
+
 
     # Captain handling:
     if new_captain is not None:
