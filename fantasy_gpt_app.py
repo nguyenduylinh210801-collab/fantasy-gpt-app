@@ -794,7 +794,7 @@ tab1, tab2, tab3 = st.tabs(["📊 BXH vòng", "📈 Dự đoán top%", "🧰 D�
 
 with tab1:
     if current_gw:
-        st.subheader(f"BXH theo điểm đúng luật — GW{current_gw}")
+        st.subheader(f"BXH — GW{current_gw}")
 
         dfm = gs_select("league_members")
         entry_ids = dfm["entry_id"].astype(int).tolist()
@@ -812,7 +812,21 @@ with tab1:
             entry_chip_map = dict(zip(dfm["entry_id"], dfm["chip"].fillna("")))
         else:
             entry_chip_map = {eid: "" for eid in dfm["entry_id"]}
-       
+        
+        # ✅ Load điểm chính thức đã ghi (nếu có)
+        df_scores = gs_select("gw_scores", where={"gw": "eq." + str(current_gw)})
+        gw_scores = {
+            int(row["entry_id"]): {"points": int(row["points"])}
+            for _, row in df_scores.iterrows()
+            if str(row.get("points", "")).strip() != ""
+        }
+
+        # ✅ Nút Ghi điểm chính thức
+        if finished:
+            if st.button("🔒 Ghi điểm chính thức"):
+                persist_final_gw_scores(entry_ids, current_gw)
+                st.success("✅ Đã ghi điểm chính thức!")
+
         # ✅ GỌI build_rankings và hiển thị BXH
         rankings = build_rankings(entry_ids, current_gw)
         df = pd.DataFrame(rankings)
