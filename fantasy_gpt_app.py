@@ -473,7 +473,7 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     pts_map, min_map = _live_maps(gw)
     elem_type_map = get_elements_index()
 
-    active_chip = picks.get("active_chip")  # 'triple_captain', 'bench_boost', 'freehit', 'wildcard' or None
+    active_chip = picks.get("active_chip")
     is_bb = (active_chip == "bench_boost")
     is_tc = (active_chip == "triple_captain")
 
@@ -481,7 +481,7 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     starters = [p["element"] for p in plist if p.get("position", 99) <= 11]
     bench = [p["element"] for p in plist if p.get("position", 99) > 11]
     captain_id = next((p["element"] for p in plist if p.get("is_captain")), None)
-    vice_id    = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
+    vice_id = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
     # Apply autosubs to determine final XI
     final_eleven, new_captain = _apply_basic_autosubs(
@@ -492,29 +492,26 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     if not is_bb:
         final_eleven = final_eleven[:11]
 
-    # Build multipliers: default = 0
-    mult = {el: 0 for el in starters + bench}
-    for el in final_eleven:
-        mult[el] = 1
+    # Build multipliers ONLY for final_eleven
+    mult = {el: 1 for el in final_eleven}
 
     # Bench Boost adds bench regardless of autosub
     if is_bb:
         for el in bench:
             mult[el] = 1
 
-    # Captain/vice-captain points handling
+    # Captain / Vice-captain logic
     if new_captain is not None:
-        mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
-        # Captain bị thay (không ra sân) thì không cộng điểm, trừ khi Bench Boost
+        if new_captain in mult:
+            mult[new_captain] *= 3 if is_tc else 2
+        # If original captain different and present in map, cancel their extra multiplier
         if captain_id and captain_id != new_captain and captain_id in mult:
-            mult[captain_id] = 0 if not is_bb else mult[captain_id]
+            if not is_bb:
+                mult[captain_id] = 0
 
-    # Calculate total points
+    # Final point calculation - only players with multiplier > 0
     total = sum(pts_map.get(el, 0) * m for el, m in mult.items() if m > 0)
-
     return int(total)
-
-
 
 # H2H members (pagination)
 def get_h2h_members(league_id: int, page: int = 1):
