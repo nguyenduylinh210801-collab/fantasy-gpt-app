@@ -796,12 +796,27 @@ tab1, tab2, tab3 = st.tabs(["📊 BXH vòng", "📈 Dự đoán top%", "🧰 D�
 
 with tab1:
     if current_gw:
-        df_rank = recompute_rank(current_gw)
-        st.subheader(f"BXH theo điểm FPL — GW{current_gw}")
-        if df_rank is None or df_rank.empty:
-            st.info("Chưa có điểm vòng này. Bấm 'Sync points'.")
+        st.subheader(f"BXH theo điểm đúng luật — GW{current_gw}")
+
+        # Dùng điểm chính thức hoặc live (11 người + autosub + captain x2)
+        dfm = gs_select("league_members")
+        entry_ids = dfm["entry_id"].astype(int).tolist() if not dfm.empty else []
+
+        if not entry_ids:
+            st.info("Chưa có đội nào. Bấm 'Sync members'.")
         else:
-            st.dataframe(df_rank, use_container_width=True)
+            rankings = build_rankings(entry_ids, current_gw)
+            df = pd.DataFrame(rankings)
+            st.dataframe(df, use_container_width=True)
+
+            # Ghi điểm chính thức nếu vòng đã kết thúc
+            if is_gameweek_finished(current_gw):
+                if st.button("🔒 Ghi điểm chính thức"):
+                    persist_final_gw_scores(entry_ids, current_gw)
+                    st.success(f"✅ Đã lưu điểm chính thức cho GW {current_gw}")
+            else:
+                st.info("⏳ Vòng chưa kết thúc — bảng điểm là LIVE.")
+
 
 with tab2:
     if current_gw:
