@@ -463,12 +463,24 @@ def _apply_basic_autosubs(starters, bench_order, minutes_map, elem_type_map, cap
     final_eleven = final[:11]
     return final_eleven, new_captain
 
+def is_gameweek_finished(gw: int) -> bool:
+    url = f"https://fantasy.premierleague.com/api/event/{gw}/"
+    try:
+        r = requests.get(url)
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("finished", False)
+    except:
+        pass
+    return False
+
+def get_final_or_live_points(entry_id: int, gw: int) -> int:
+    if is_gameweek_finished(gw) and gw_scores.get(entry_id, {}).get("points") is not None:
+        return gw_scores[entry_id]["points"]
+    else:
+        return compute_live_points_for_entry(entry_id, gw)
+
 def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
-    """
-    Returns estimated LIVE points for entry using picks + live + basic autosubs + chips.
-    If Triple Captain active -> captain*3; if Bench Boost -> bench contribute; Free Hit handled by API picks already.
-    Only 11 valid starters counted, unless Bench Boost chip is active.
-    """
     picks = get_entry_picks(entry_id, gw)
     pts_map, min_map = _live_maps(gw)
     elem_type_map = get_elements_index()
@@ -483,35 +495,55 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     captain_id = next((p["element"] for p in plist if p.get("is_captain")), None)
     vice_id = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
-    # Apply autosubs to determine final XI
     final_eleven, new_captain = _apply_basic_autosubs(
         starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
     )
 
-    # Ensure only 11 players unless Bench Boost
     if not is_bb:
         final_eleven = final_eleven[:11]
 
-    # Build multipliers ONLY for final_eleven
-    mult = {el: 1 for el in final_eleven}
+    mult = {el: 0 for el in starters + bench}
+    for el in final_eleven:
+        mult[el] = 1
 
-    # Bench Boost adds bench regardless of autosub
     if is_bb:
         for el in bench:
             mult[el] = 1
 
-    # Captain / Vice-captain logic
     if new_captain is not None:
-        if new_captain in mult:
-            mult[new_captain] *= 3 if is_tc else 2
-        # If original captain different and present in map, cancel their extra multiplier
+        mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
         if captain_id and captain_id != new_captain and captain_id in mult:
-            if not is_bb:
-                mult[captain_id] = 0
+            mult[captain_id] = 0 if not is_bb else mult[captain_id]
 
-    # Final point calculation - only players with multiplier > 0
-    total = sum(pts_map.get(el, 0) * m for el, m in mult.items() if m > 0)
+    total = sum(pts_map.get(el, 0) * m for el, m in mult.items())
     return int(total)
+
+def persist_final_gw_scores(entry_ids: list[int], gw: int):
+    for entry_id in entry_ids:
+        pts = compute_live_points_for_entry(entry_id, gw)
+        gw_scores[entry_id] = {"points": pts}
+    save_gw_scores_to_sheet(gw, gw_scores)
+
+# ✅ SỬA BXH:
+# ❌ Sai: dùng gw_scores[entry_id]["points"]
+# ✅ Đúng:
+
+def build_rankings(entry_ids: list[int], gw: int) -> list[dict]:
+    entry_gw_scores = []
+    for entry_id in entry_ids:
+        points = get_final_or_live_points(entry_id, gw)
+        entry_gw_scores.append({
+            "entry": entry_id,
+            "player_name": player_name_map.get(entry_id, ""),
+            "points": points,
+            "chip": entry_chip_map.get(entry_id, "")
+        })
+
+    entry_gw_scores = sorted(entry_gw_scores, key=lambda x: x["points"], reverse=True)
+    for i, row in enumerate(entry_gw_scores, start=1):
+        row["rank"] = i
+    return entry_gw_scores
+
 
 # H2H members (pagination)
 def get_h2h_members(league_id: int, page: int = 1):
