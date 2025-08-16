@@ -738,7 +738,6 @@ if INVITE_CODE:
 
 st.write("")  # spacing nhẹ
 
-# Hàng metric: 3 cột bằng nhau
 # Hàng metric: 2 cột (ẩn League ID)
 m_left, m_right = st.columns([2, 1], gap="large")
 
@@ -753,7 +752,6 @@ with m_left:
 
 with m_right:
     st.metric("Finished?", "Yes" if finished else "No")
-
 
 st.write("")  # spacing nhẹ
 
@@ -790,8 +788,6 @@ with b3:
 st.divider()
 
 # =========================
-# Tabs
-# =========================
 tab1, tab2, tab3 = st.tabs(["📊 BXH vòng", "📈 Dự đoán top%", "🧰 Dữ liệu"]) 
 
 with tab1:
@@ -801,24 +797,17 @@ with tab1:
         dfm = gs_select("league_members")
         entry_ids = dfm["entry_id"].astype(int).tolist()
 
-        # ✅ Tạo biến cần thiết
-        player_name_map = dict(zip(dfm["entry_id"], dfm["player_name"]))
-        entry_chip_map = dict(zip(dfm["entry_id"], dfm["chip"].fillna("")))
-
-        if not entry_ids:
-            st.info("Chưa có đội nào. Bấm 'Sync members'.")
+        # ✅ Tạo player_name_map an toàn
+        if "player_name" in dfm.columns:
+            player_name_map = dict(zip(dfm["entry_id"], dfm["player_name"]))
         else:
-            rankings = build_rankings(entry_ids, current_gw)
-            df = pd.DataFrame(rankings)
-            st.dataframe(df, use_container_width=True)
+            player_name_map = {eid: "" for eid in dfm["entry_id"]}
 
-            if is_gameweek_finished(current_gw):
-                if st.button("🔒 Ghi điểm chính thức"):
-                    persist_final_gw_scores(entry_ids, current_gw)
-                    st.success(f"✅ Đã lưu điểm chính thức cho GW {current_gw}")
-            else:
-                st.info("⏳ Vòng chưa kết thúc — bảng điểm là LIVE.")
-
+        # ✅ Tạo entry_chip_map an toàn (nếu thiếu cột "chip")
+        if "chip" in dfm.columns:
+            entry_chip_map = dict(zip(dfm["entry_id"], dfm["chip"].fillna("")))
+        else:
+            entry_chip_map = {eid: "" for eid in dfm["entry_id"]}
 
 with tab2:
     if current_gw:
