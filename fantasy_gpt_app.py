@@ -498,10 +498,10 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     for el in final_eleven:
         mult[el] = 1
 
-# Nếu Bench Boost chip thì mới thêm toàn bộ bench
-if is_bb:
-    for el in bench:
-        mult[el] = 1
+    # Nếu Bench Boost chip thì mới thêm toàn bộ bench
+    if is_bb:
+        for el in bench:
+            mult[el] = 1
 
 
     # Captain handling:
