@@ -534,10 +534,12 @@ def build_rankings(entry_ids: list[int], gw: int) -> list[dict]:
         points = get_final_or_live_points(entry_id, gw)
         entry_gw_scores.append({
             "entry": entry_id,
+            "entry_name": entry_name_map.get(entry_id, ""),  # ✅ thêm dòng này
             "player_name": player_name_map.get(entry_id, ""),
             "points": points,
             "chip": entry_chip_map.get(entry_id, "")
         })
+
 
     entry_gw_scores = sorted(entry_gw_scores, key=lambda x: x["points"], reverse=True)
     for i, row in enumerate(entry_gw_scores, start=1):
@@ -796,6 +798,8 @@ with tab1:
 
         dfm = gs_select("league_members")
         entry_ids = dfm["entry_id"].astype(int).tolist()
+        entry_name_map = dict(zip(dfm["entry_id"], dfm["entry_name"]))
+
 
         # ✅ Tạo player_name_map an toàn
         if "player_name" in dfm.columns:
@@ -811,12 +815,8 @@ with tab1:
        
         # ✅ GỌI build_rankings và hiển thị BXH
         rankings = build_rankings(entry_ids, current_gw)
-        if rankings:
-            df = pd.DataFrame(rankings)
-            st.dataframe(df[["rank", "entry_name", "player_name", "points", "chip"]], use_container_width=True)
-        else:
-            st.info("Chưa có dữ liệu BXH.")
-
+        df = pd.DataFrame(rankings)
+        st.dataframe(df[["rank", "entry_name", "player_name", "points", "chip"]], use_container_width=True)
 
 with tab2:
     if current_gw:
