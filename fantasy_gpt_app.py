@@ -808,6 +808,15 @@ with tab1:
             entry_chip_map = dict(zip(dfm["entry_id"], dfm["chip"].fillna("")))
         else:
             entry_chip_map = {eid: "" for eid in dfm["entry_id"]}
+       
+        # ✅ GỌI build_rankings và hiển thị BXH
+        rankings = build_rankings(entry_ids, current_gw)
+        if rankings:
+            df = pd.DataFrame(rankings)
+            st.dataframe(df[["rank", "entry_name", "player_name", "points", "chip"]], use_container_width=True)
+        else:
+            st.info("Chưa có dữ liệu BXH.")
+
 
 with tab2:
     if current_gw:
