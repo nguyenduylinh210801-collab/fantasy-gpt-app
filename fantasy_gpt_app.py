@@ -476,47 +476,42 @@ def compute_live_points_for_entry(entry_id: int, gw: int) -> int:
     is_bb = (active_chip == "bench_boost")
     is_tc = (active_chip == "triple_captain")
 
-    # picks["picks"] has fields: element, position (1..15), is_captain, is_vice_captain, multiplier (effective)
     plist = sorted(picks.get("picks", []), key=lambda x: x.get("position", 99))
     starters = [p["element"] for p in plist if p.get("position", 99) <= 11]
     bench = [p["element"] for p in plist if p.get("position", 99) > 11]
     captain_id = next((p["element"] for p in plist if p.get("is_captain")), None)
     vice_id    = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
-    # Basic autosubs estimation (only during live; official autosubs applied after GW ends)
+    # Apply autosubs to determine final XI
     final_eleven, new_captain = _apply_basic_autosubs(
         starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
     )
 
-    # Build multipliers:
-    # - Default starters multiplier = 1; bench = 0 (unless Bench Boost)
-    # - Captain = x2 (or x3 if Triple Captain)
     # Reset multipliers
-    # Reset multipliers về 0 cho tất cả
     mult = {el: 0 for el in starters + bench}
 
-    # Chỉ tính điểm cho đúng 11 người cuối cùng sau autosubs
+    # Ensure only 11 players are counted unless Bench Boost
     final_eleven = final_eleven[:11]
     for el in final_eleven:
         mult[el] = 1
 
-    # Nếu Bench Boost → tính điểm cả bench luôn
     if is_bb:
         for el in bench:
             mult[el] = 1
 
-    # Captain xử lý riêng: x2 hoặc x3
+    # Captain multiplier
     if new_captain is not None:
         mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
         if captain_id and captain_id != new_captain and captain_id in mult:
             mult[captain_id] = 0 if not is_bb else mult[captain_id]
 
-    # Sum points
     total = 0
     for el, m in mult.items():
         p = pts_map.get(el, 0)
         total += p * m
+
     return int(total)
+
 
 # H2H members (pagination)
 def get_h2h_members(league_id: int, page: int = 1):
