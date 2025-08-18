@@ -852,7 +852,7 @@ def build_h2h_table(upto_gw: int) -> pd.DataFrame:
         agg["entry_name"] = agg["entry_id"].astype(str)
 
     # Tie-breaker: P → GD → GF (KHÔNG có mini-league H2H)
-    agg = agg.sort_values(["P","GD","GF"], ascending=[False, False, False]).reset_index(drop=True)
+    agg = agg.sort_values(["P", "GF"], ascending=[False, False]).reset_index(drop=True)
     agg["rank"] = np.arange(1, len(agg)+1)
 
     # Lưu bảng để UI lần sau đọc nhanh
