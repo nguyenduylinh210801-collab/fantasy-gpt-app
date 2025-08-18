@@ -319,6 +319,9 @@ if st.sidebar.button("Test Google Sheets"):
     except Exception as e:
         st.sidebar.error(f"Lỗi GS: {e}")
 
+current_gw, finished = get_current_event()
+
+
 # === Sidebar: Admin tools ===
 with st.sidebar.expander("🔧 Admin tools", expanded=True):
     sb_sync_members = st.button("Sync members", use_container_width=True)
@@ -1006,7 +1009,7 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
 # =========================
 # UI Controls (đẹp & cân đối)
 # =========================
-current_gw, finished = get_current_event()
+
 gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
