@@ -1013,25 +1013,65 @@ with tab1:
 
 with tab2:  # 🏆 BXH H2H
     st.subheader("Bảng xếp hạng Head-to-Head (3–1–0)")
+
     if not league_id_int:
         st.warning("Hãy nhập đúng H2H League ID ở sidebar.")
     else:
-        colA, colB = st.columns([1,1])
-        with colA:
-            gw_to_calc = st.number_input("GW cần cập nhật H2H", min_value=1, value=int(current_gw or 1), step=1)
-            if st.button("Cập nhật kết quả H2H cho GW đã chọn"):
-                with st.spinner("Đang tính H2H..."):
-                    compute_h2h_results_for_gw(league_id_int, gw_to_calc)
-                st.success(f"Đã cập nhật H2H cho GW {gw_to_calc}.")
-        with colB:
-            upto = st.number_input("Gộp BXH tới GW", min_value=1, value=int(current_gw or 1), step=1)
-            if st.button("Xây BXH H2H"):
-                tbl = build_h2h_table(upto)
-                if tbl.empty:
-                    st.info("Chưa có dữ liệu H2H. Hãy Sync points và Cập nhật H2H trước.")
-                else:
-                    tbl_vn = show_vn(tbl, "h2h_table")
-                    st.dataframe(tbl_vn, use_container_width=True)
+        # ==== Giao diện gọn trong 1 form ====
+        with st.form("h2h_form", clear_on_submit=False, border=False):
+            c1, c2, c3 = st.columns([1, 1, 1.2])
+
+            with c1:
+                use_current = st.checkbox("Dùng GW hiện tại", value=True)
+                gw_left = int(current_gw or 1)
+                gw_calc = st.number_input(
+                    "GW cập nhật H2H",
+                    min_value=1,
+                    value=gw_left,
+                    step=1,
+                    disabled=use_current
+                )
+
+            with c2:
+                upto_val = st.number_input(
+                    "Gộp BXH tới GW",
+                    min_value=1,
+                    value=int(current_gw or 1),
+                    step=1
+                )
+
+            with c3:
+                st.markdown("&nbsp;", unsafe_allow_html=True)  # đệm cho hàng nút
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1.2])
+                do_update = col_btn1.form_submit_button("↻ Cập nhật")
+                do_build  = col_btn2.form_submit_button("📊 Xây BXH")
+                do_both   = col_btn3.form_submit_button("⚡ Cập nhật & Xây", type="primary")
+
+        # ==== Xử lý nút ====
+        if use_current:
+            gw_calc = int(current_gw or 1)
+
+        ran_any = False
+        if do_update or do_both:
+            with st.spinner(f"Đang tính H2H cho GW {gw_calc}..."):
+                df_h2h = compute_h2h_results_for_gw(league_id_int, gw_calc)
+            if df_h2h is None or df_h2h.empty:
+                st.warning("Không có dữ liệu để cập nhật (kiểm tra gw_scores / fixtures).")
+            else:
+                st.success(f"Đã cập nhật {len(df_h2h)//2} trận H2H cho GW {gw_calc}.")
+                ran_any = True
+
+        if do_build or do_both or ran_any:
+            tbl = build_h2h_table(int(upto_val))
+            if tbl is None or tbl.empty:
+                st.info("Chưa có dữ liệu BXH. Hãy Cập nhật H2H trước.")
+            else:
+                # Đổi nhãn → tiếng Việt và bỏ index bên trái
+                tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
+                # Nếu muốn ẩn GF/GA/GD, chỉ giữ các cột sau:
+                # tbl_vn = tbl_vn[["Hạng","Tên đội","Trận","Thắng","Hòa","Thua","Điểm"]]
+                st.dataframe(tbl_vn, use_container_width=True)
+
 
 with tab3:
     if current_gw:
