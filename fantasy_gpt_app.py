@@ -1049,14 +1049,11 @@ with tab1:  # 🏆 BXH H2H
             c1, c2, c3 = st.columns([1, 1, 1.2])
 
             with c1:
-                use_current = st.checkbox("Dùng GW hiện tại", value=True)
-                gw_left = int(current_gw or 1)
-                gw_calc = st.number_input(
-                    "GW cập nhật H2H",
+                gw_result = st.number_input(
+                    "GW hiển thị kết quả",
                     min_value=1,
-                    value=gw_left,
-                    step=1,
-                    disabled=use_current
+                    value=int(current_gw or 1),
+                    step=1
                 )
 
             with c2:
@@ -1078,41 +1075,36 @@ with tab1:  # 🏆 BXH H2H
 
             with c3:
                 st.markdown("&nbsp;", unsafe_allow_html=True)  # đệm cho hàng nút
-                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1.2])
-                do_update = col_btn1.form_submit_button("↻ Cập nhật")
-                do_build  = col_btn2.form_submit_button("📊 Xây BXH")
-                do_both   = col_btn3.form_submit_button("⚡ Cập nhật & Xây", type="primary")
+                do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
+
 
         # ==== Xử lý nút ====
         if use_current:
             gw_calc = int(current_gw or 1)
 
         ran_any = False
-        if do_build or do_both or ran_any:
-            # trái: BXH H2H; phải: Kết quả GW (giống ảnh)
+        if do_both:
+            compute_h2h_results_for_gw(league_id_int, gw_result)
+
             left, right = st.columns([1.1, 1.2], gap="large")
 
-            # ===== BXH (trái)
+            # === BXH
             tbl = build_h2h_table_range(gw_from, gw_to)
             if tbl is None or tbl.empty:
-                left.info("Chưa có dữ liệu BXH. Hãy Cập nhật H2H trước.")
+                left.info("Chưa có dữ liệu BXH.")
             else:
                 left.subheader("BẢNG XẾP HẠNG")
-                # Đổi nhãn TV và chọn cột gọn giống ảnh
                 tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
-                # Nếu muốn hiển thị thêm BT/BB/HS → sửa build_h2h_table trả về đủ cột rồi chọn ở đây
                 left.dataframe(
-                    tbl_vn[["Hạng","Tên đội","Điểm","Điểm tích lũy","Thắng","Hòa","Thua"]].set_index("Hạng"),
+                    tbl_vn[["Hạng", "Tên đội", "Điểm", "Điểm tích lũy", "Thắng", "Hòa", "Thua"]].set_index("Hạng"),
                     use_container_width=True
                 )
 
-            # ===== Kết quả (phải)
-            right.subheader("KẾT QUẢ")
-            # dùng gw_calc (GW vừa cập nhật) hoặc cho người dùng chọn GW khác:
-            gw_for_results = gw_calc
-            df_res = build_h2h_results_view(league_id_int, int(gw_for_results))
+            # === KẾT QUẢ
+            right.subheader(f"KẾT QUẢ — GW {gw_result}")
+            df_res = build_h2h_results_view(league_id_int, gw_result)
             if df_res is None or df_res.empty:
-                right.info(f"Không có dữ liệu kết quả cho GW {gw_for_results}.")
+                right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
             else:
                 right.dataframe(
                     df_res.rename(columns={"": "Tỷ số"}).set_index("Vòng"),
