@@ -155,6 +155,8 @@ HEADER_MAP = {
     "gw_scores": ["entry_id","gw","points","live","chip","updated_at"],
     "gw_rank": ["gw","entry_id","rank","points"],
     "gw_predictions": ["gw","entry_id","p_top1","p_top2","p_top3","updated_at"],
+    "h2h_results": ["gw","entry_id","opp_id","gf","ga","pts"],
+    "h2h_table": ["entry_id","entry_name","Pld","W","D","L","GF","GA","GD","P","rank"],
 }
 
 def _get_ws(title: str):
@@ -283,6 +285,27 @@ if st.sidebar.button("Test Google Sheets"):
 # =========================
 SESSION = requests.Session()
 BASE = "https://fantasy.premierleague.com/api"
+
+@st.cache_data(ttl=180)
+def get_h2h_matches_page(league_id: int, gw: int, page: int = 1):
+    url = f"{BASE}/leagues-h2h-matches/league/{league_id}/?page={page}&event={gw}"
+    r = SESSION.get(url, timeout=15)
+    r.raise_for_status()
+    return r.json()
+
+def fetch_h2h_matches(league_id: int, gw: int):
+    out, page = [], 1
+    while True:
+        data = get_h2h_matches_page(league_id, gw, page)
+        results = (data or {}).get("results", []) or []
+        if not results:
+            break
+        out.extend(results)
+        if not data.get("has_next"):
+            break
+        page += 1
+    return out
+
 
 @st.cache_data(ttl=180)
 def get_bootstrap():
@@ -675,6 +698,97 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
     if rows:
         gs_upsert("gw_scores", ["entry_id","gw"], rows)
 
+def get_points_map_for_gw(gw: int) -> dict[int, int]:
+    """
+    Ưu tiên official (live==False) nếu tồn tại; nếu không có thì lấy live (live==True).
+    Nếu một entry có nhiều dòng => chọn official trước, ngược lại chọn điểm cao nhất.
+    """
+    df = gs_select("gw_scores", where={"gw": "eq."+str(gw)})
+    if df.empty:
+        return {}
+    df = df.copy()
+    df["points"] = pd.to_numeric(df["points"], errors="coerce").fillna(0).astype(int)
+
+    # Chia nhóm theo entry_id, pick official nếu có, else max points
+    best_rows = []
+    for eid, g in df.groupby("entry_id"):
+        g = g.sort_values(["live","points"], ascending=[True, False])  # live=False trước, rồi points giảm dần
+        # Nếu không có cột 'live' (trường hợp hiếm), chỉ cần lấy max points
+        if "live" not in g.columns:
+            row = g.sort_values("points", ascending=False).iloc[0]
+        else:
+            # ưu tiên official (live==False); nếu không có, lấy hàng đầu (max points)
+            official = g[g["live"] == False]
+            row = official.iloc[0] if not official.empty else g.iloc[0]
+        best_rows.append((int(eid), int(row["points"])))
+    return dict(best_rows)
+
+def compute_h2h_results_for_gw(league_id: int, gw: int) -> pd.DataFrame:
+    pts_map = get_points_map_for_gw(gw)
+    if not pts_map:
+        st.warning(f"Chưa có gw_scores cho GW {gw}. Hãy bấm 'Sync points'.")
+        return pd.DataFrame()
+
+    matches = fetch_h2h_matches(int(league_id), int(gw))
+    if not matches:
+        st.info(f"Không tìm thấy cặp đấu H2H cho GW {gw}.")
+        return pd.DataFrame()
+
+    rows = []
+    for m in matches:
+        e1 = int(m["entry_1_entry"])
+        e2 = int(m["entry_2_entry"])
+        p1 = int(pts_map.get(e1, 0))
+        p2 = int(pts_map.get(e2, 0))
+        if   p1 > p2: r1, r2 = 3, 0
+        elif p1 < p2: r1, r2 = 0, 3
+        else:         r1, r2 = 1, 1
+        rows += [
+            {"gw": gw, "entry_id": e1, "opp_id": e2, "gf": p1, "ga": p2, "pts": r1},
+            {"gw": gw, "entry_id": e2, "opp_id": e1, "gf": p2, "ga": p1, "pts": r2},
+        ]
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        gs_upsert("h2h_results", ["gw","entry_id"], df.to_dict(orient="records"))
+    return df
+
+def build_h2h_table(upto_gw: int) -> pd.DataFrame:
+    df = gs_select("h2h_results", where={"gw": "lte."+str(upto_gw)})
+    if df.empty:
+        return pd.DataFrame()
+
+    df["win"]  = (df["pts"] == 3).astype(int)
+    df["draw"] = (df["pts"] == 1).astype(int)
+    df["loss"] = (df["pts"] == 0).astype(int)
+
+    agg = df.groupby("entry_id").agg(
+        P=("pts","sum"),
+        Pld=("gw","count"),
+        W=("win","sum"),
+        D=("draw","sum"),
+        L=("loss","sum"),
+        GF=("gf","sum"),
+        GA=("ga","sum"),
+    ).reset_index()
+    agg["GD"] = agg["GF"] - agg["GA"]
+
+    # Join tên đội
+    mems = gs_select("league_members")
+    if not mems.empty:
+        agg = agg.merge(mems[["entry_id","entry_name"]], on="entry_id", how="left")
+    else:
+        agg["entry_name"] = agg["entry_id"].astype(str)
+
+    # Tie-breaker: P → GD → GF (KHÔNG có mini-league H2H)
+    agg = agg.sort_values(["P","GD","GF"], ascending=[False, False, False]).reset_index(drop=True)
+    agg["rank"] = np.arange(1, len(agg)+1)
+
+    # Lưu bảng để UI lần sau đọc nhanh
+    gs_upsert("h2h_table", ["entry_id"], agg.to_dict(orient="records"))
+
+    return agg[["rank","entry_name","Pld","W","D","L","GF","GA","GD","P"]]
+
+
 
 def recompute_rank(gw: int) -> pd.DataFrame:
     df_scores = gs_select("gw_scores", where={"gw":"eq."+str(gw)})
@@ -809,7 +923,7 @@ with b3:
 st.divider()
 
 # =========================
-tab1, tab2, tab3 = st.tabs(["📊 BXH vòng", "📈 Dự đoán top%", "🧰 Dữ liệu"]) 
+tab1, tab2, tab3, tab4 = st.tabs(["📊 BXH vòng", "🏆 BXH H2H", "📈 Dự đoán top%", "🧰 Dữ liệu"])
 
 with tab1:
     if current_gw:
@@ -854,7 +968,28 @@ with tab1:
         df = pd.DataFrame(rankings)
         st.dataframe(df[["rank", "entry_name", "player_name", "points", "chip"]], use_container_width=True)
 
-with tab2:
+with tab2:  # 🏆 BXH H2H
+    st.subheader("Bảng xếp hạng Head-to-Head (3–1–0)")
+    if not league_id_int:
+        st.warning("Hãy nhập đúng H2H League ID ở sidebar.")
+    else:
+        colA, colB = st.columns([1,1])
+        with colA:
+            gw_to_calc = st.number_input("GW cần cập nhật H2H", min_value=1, value=int(current_gw or 1), step=1)
+            if st.button("Cập nhật kết quả H2H cho GW đã chọn"):
+                with st.spinner("Đang tính H2H..."):
+                    compute_h2h_results_for_gw(league_id_int, gw_to_calc)
+                st.success(f"Đã cập nhật H2H cho GW {gw_to_calc}.")
+        with colB:
+            upto = st.number_input("Gộp BXH tới GW", min_value=1, value=int(current_gw or 1), step=1)
+            if st.button("Xây BXH H2H"):
+                tbl = build_h2h_table(upto)
+                if tbl.empty:
+                    st.info("Chưa có dữ liệu H2H. Hãy Sync points và Cập nhật H2H trước.")
+                else:
+                    st.dataframe(tbl, use_container_width=True)
+
+with tab3:
     if current_gw:
         if st.button("Run Monte Carlo (10k)"):
             with st.spinner("Đang mô phỏng..."):
@@ -881,7 +1016,7 @@ with tab2:
             st.info("Chưa có kết quả mô phỏng.")
 
 
-with tab3:
+with tab4:
     st.write("League members (Sheet):")
     st.dataframe(gs_read_df("league_members"), use_container_width=True)
     if current_gw:
