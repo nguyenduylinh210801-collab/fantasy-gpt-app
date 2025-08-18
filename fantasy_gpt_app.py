@@ -1001,52 +1001,9 @@ st.divider()
 # =========================
 # Tab layout
 # =========================
-tab1, tab2, tab3= st.tabs(["📊 BXH vòng", "🏆 BXH H2H", "📈 Dự đoán top%"])
+tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
 
-with tab1:
-    if current_gw:
-        st.subheader(f"BXH — GW{current_gw}")
-
-        dfm = gs_select("league_members")
-        entry_ids = dfm["entry_id"].astype(int).tolist()
-        entry_name_map = dict(zip(dfm["entry_id"], dfm["entry_name"]))
-
-
-        # ✅ Tạo player_name_map an toàn
-        if "player_name" in dfm.columns:
-            player_name_map = dict(zip(dfm["entry_id"], dfm["player_name"]))
-        else:
-            player_name_map = {eid: "" for eid in dfm["entry_id"]}
-
-        # ✅ Tạo entry_chip_map an toàn (nếu thiếu cột "chip")
-        if "chip" in dfm.columns:
-            entry_chip_map = dict(zip(dfm["entry_id"], dfm["chip"].fillna("")))
-        else:
-            entry_chip_map = {eid: "" for eid in dfm["entry_id"]}
-        
-        # ✅ Load điểm chính thức đã ghi (nếu có)
-        df_scores = gs_select("gw_scores", where={"gw": "eq." + str(current_gw)})
-        gw_scores = {
-            int(row["entry_id"]): {
-                "points": int(row["points"]),
-                "chip": row.get("chip", "")
-            }
-            for _, row in df_scores.iterrows()
-            if str(row.get("points", "")).strip() != ""
-        }
-
-        # ✅ Nút Ghi điểm chính thức
-        if finished:
-            if st.button("🔒 Ghi điểm chính thức"):
-                persist_final_gw_scores(entry_ids, current_gw)
-                st.success("✅ Đã ghi điểm chính thức!")
-
-        # ✅ GỌI build_rankings và hiển thị BXH
-        rankings = build_rankings(entry_ids, current_gw)
-        df = pd.DataFrame(rankings)
-        st.dataframe(df[["rank", "entry_name", "player_name", "points", "chip"]], use_container_width=True)
-
-with tab2:  # 🏆 BXH H2H
+with tab1:  # 🏆 BXH H2H
     st.subheader("Bảng xếp hạng Head-to-Head (3–1–0)")
 
     if not league_id_int:
@@ -1101,7 +1058,7 @@ with tab2:  # 🏆 BXH H2H
                 tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
                 # Nếu muốn hiển thị thêm BT/BB/HS → sửa build_h2h_table trả về đủ cột rồi chọn ở đây
                 left.dataframe(
-                    tbl_vn[["Hạng","Tên đội","Trận","Thắng","Hòa","Thua","Điểm"]],
+                    tbl_vn[["Hạng","Tên đội","Trận","Thắng","Hòa","Thua","Điểm"]].set_index("Hạng"),
                     use_container_width=True
                 )
 
@@ -1114,12 +1071,11 @@ with tab2:  # 🏆 BXH H2H
                 right.info(f"Không có dữ liệu kết quả cho GW {gw_for_results}.")
             else:
                 right.dataframe(
-                df_res.rename(columns={"": "Tỷ số"}),  # đặt tên cột điểm giữa nếu muốn
-                use_container_width=True
+                    df_res.rename(columns={"": "Tỷ số"}).set_index("Vòng"),
+                    use_container_width=True
                 )
 
-
-with tab3:
+with tab2:
     if current_gw:
         if st.button("Run Monte Carlo (10k)"):
             with st.spinner("Đang mô phỏng..."):
