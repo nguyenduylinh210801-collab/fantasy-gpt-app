@@ -1046,59 +1046,43 @@ with tab1:  # 🏆 BXH H2H
     else:
         # ==== Giao diện gọn trong 1 form ====
         with st.form("h2h_form", clear_on_submit=False, border=False):
-            c1, c2, c3 = st.columns([1, 1, 1.2])
+            col_left, col_right = st.columns([1.1, 1.2], gap="large")
 
-            with c1:
-                gw_result = st.number_input(
-                    "GW hiển thị kết quả",
-                    min_value=1,
-                    value=int(current_gw or 1),
-                    step=1
-                )
+            with col_left:
+                st.markdown("#### 📊 BẢNG XẾP HẠNG")
+                gw_from = st.number_input("Từ GW", min_value=1, value=1, step=1, key="gw_from")
+                gw_to = st.number_input("Đến GW", min_value=gw_from, value=int(current_gw or 1), step=1, key="gw_to")
 
-            with c2:
-                col_from, col_to = st.columns(2)
-                with col_from:
-                    gw_from = st.number_input(
-                        "Từ GW",
-                        min_value=1,
-                        value=1,
-                        step=1
-                    )
-                with col_to:
-                    gw_to = st.number_input(
-                        "Đến GW",
-                        min_value=gw_from,
-                        value=int(current_gw or 1),
-                        step=1
-                    )
+            with col_right:
+                st.markdown("#### 📋 KẾT QUẢ")
+                gw_result = st.number_input("GW hiển thị kết quả", min_value=1, value=int(current_gw or 1), step=1, key="gw_result")
 
-            with c3:
-                st.markdown("&nbsp;", unsafe_allow_html=True)  # đệm cho hàng nút
+            center_btn = st.columns([2, 1, 2])[1]
+            with center_btn:
                 do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
 
-
-        ran_any = False
+        # ==== Xử lý sau khi nhấn nút ====
         if do_both:
             compute_h2h_results_for_gw(league_id_int, gw_result)
 
+            # Chia 2 cột hiển thị kết quả
             left, right = st.columns([1.1, 1.2], gap="large")
 
-            # === BXH
+            # === BXH ===
             tbl = build_h2h_table_range(gw_from, gw_to)
             if tbl is None or tbl.empty:
                 left.info("Chưa có dữ liệu BXH.")
             else:
-                left.subheader("BẢNG XẾP HẠNG")
+                left.subheader(f"📊 BẢNG XẾP HẠNG ({gw_from} → {gw_to})")
                 tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
                 left.dataframe(
                     tbl_vn[["Hạng", "Tên đội", "Điểm", "Điểm tích lũy", "Thắng", "Hòa", "Thua"]].set_index("Hạng"),
                     use_container_width=True
                 )
 
-            # === KẾT QUẢ
-            right.subheader(f"KẾT QUẢ — GW {gw_result}")
+            # === KẾT QUẢ ===
             df_res = build_h2h_results_view(league_id_int, gw_result)
+            right.subheader(f"📋 KẾT QUẢ — GW {gw_result}")
             if df_res is None or df_res.empty:
                 right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
             else:
