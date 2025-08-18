@@ -1078,10 +1078,6 @@ with tab1:  # 🏆 BXH H2H
                 do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
 
 
-        # ==== Xử lý nút ====
-        if use_current:
-            gw_calc = int(current_gw or 1)
-
         ran_any = False
         if do_both:
             compute_h2h_results_for_gw(league_id_int, gw_result)
