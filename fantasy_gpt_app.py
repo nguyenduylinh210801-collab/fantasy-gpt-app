@@ -47,6 +47,49 @@ import pandas as pd
 import streamlit as st
 from typing import Dict, List, Tuple
 
+# ===== Vietnamese column labels (không đổi schema) =====
+VN_LABELS = {
+    "h2h_table": {
+        "rank": "Hạng", "entry_name": "Tên đội",
+        "Pld": "Trận", "W": "Thắng", "D": "Hòa", "L": "Thua",
+        "GF": "Điểm ghi", "GA": "Điểm thủng", "GD": "Hiệu số",
+        "P": "Điểm"
+    },
+    "h2h_results": {
+        "gw": "GW", "entry_id": "ID đội", "opp_id": "Đối thủ",
+        "gf": "Điểm ghi (GW)", "ga": "Điểm thủng (GW)", "pts": "Điểm (3–1–0)"
+    },
+    "gw_rank": {
+        "gw": "GW", "entry_id": "ID đội",
+        "rank": "Hạng vòng", "points": "Điểm FPL vòng"
+    },
+    "gw_scores": {
+        "entry_id": "ID đội", "gw": "GW", "points": "Điểm",
+        "live": "Live?", "chip": "Chip", "updated_at": "Cập nhật"
+    },
+    "gw_predictions": {
+        "gw": "GW", "entry_id": "ID đội",
+        "p_top1": "P Top1", "p_top2": "P Top2", "p_top3": "P Top3",
+        "updated_at": "Cập nhật"
+    },
+    "league_members": {
+        "entry_id": "ID đội", "entry_name": "Tên đội",
+        "player_name": "Tên HLV", "joined_at": "Tham gia"
+    },
+}
+
+def show_vn(df, kind: str):
+    """
+    Đổi nhãn cột sang tiếng Việt chỉ khi hiển thị.
+    kind ∈ {'h2h_table','h2h_results','gw_rank','gw_scores','gw_predictions','league_members'}
+    """
+    if df is None or df.empty:
+        return df
+    mapping = VN_LABELS.get(kind, {})
+    safe_map = {k: v for k, v in mapping.items() if k in df.columns}
+    return df.rename(columns=safe_map)
+
+
 # =========================
 # Config from Secrets
 # =========================
@@ -111,9 +154,6 @@ div[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
 st.title("⚽ SO Fantasy Premier League")
 
 
-# =========================
-# Google Sheets helpers (gspread)
-# =========================
 # =========================
 # Google Sheets helpers (gspread)
 # =========================
@@ -923,7 +963,9 @@ with b3:
 st.divider()
 
 # =========================
-tab1, tab2, tab3, tab4 = st.tabs(["📊 BXH vòng", "🏆 BXH H2H", "📈 Dự đoán top%", "🧰 Dữ liệu"])
+# Tab layout
+# =========================
+tab1, tab2, tab3= st.tabs(["📊 BXH vòng", "🏆 BXH H2H", "📈 Dự đoán top%"])
 
 with tab1:
     if current_gw:
@@ -987,7 +1029,8 @@ with tab2:  # 🏆 BXH H2H
                 if tbl.empty:
                     st.info("Chưa có dữ liệu H2H. Hãy Sync points và Cập nhật H2H trước.")
                 else:
-                    st.dataframe(tbl, use_container_width=True)
+                    tbl_vn = show_vn(tbl, "h2h_table")
+                    st.dataframe(tbl_vn, use_container_width=True)
 
 with tab3:
     if current_gw:
@@ -1016,9 +1059,3 @@ with tab3:
             st.info("Chưa có kết quả mô phỏng.")
 
 
-with tab4:
-    st.write("League members (Sheet):")
-    st.dataframe(gs_read_df("league_members"), use_container_width=True)
-    if current_gw:
-        st.write(f"GW{current_gw} scores:")
-        st.dataframe(gs_select("gw_scores", where={"gw":"eq."+str(current_gw)}), use_container_width=True)
