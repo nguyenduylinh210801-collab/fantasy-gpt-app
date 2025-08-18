@@ -52,7 +52,7 @@ VN_LABELS = {
     "h2h_table": {
         "rank": "Hạng", "entry_name": "Tên đội",
         "Pld": "Trận", "W": "Thắng", "D": "Hòa", "L": "Thua",
-        "GF": "Điểm ghi", "GA": "Điểm thủng", "GD": "Hiệu số",
+        "GF": "Điểm tích lũy", "GA": "Điểm thủng", "GD": "Hiệu số",
         "P": "Điểm"
     },
     "h2h_results": {
@@ -319,6 +319,38 @@ if st.sidebar.button("Test Google Sheets"):
     except Exception as e:
         st.sidebar.error(f"Lỗi GS: {e}")
 
+# === Sidebar: Admin tools ===
+with st.sidebar.expander("🔧 Admin tools", expanded=True):
+    sb_sync_members = st.button("Sync members", use_container_width=True)
+    sb_sync_points  = st.button("Sync points (current GW)", use_container_width=True)
+    sb_recompute    = st.button("Recompute rank", use_container_width=True)
+
+# Hành động cho các nút ở sidebar
+if sb_sync_members:
+    if league_id_int:
+        with st.spinner("Đang đồng bộ danh sách đội..."):
+            dfm = sync_members_to_db(league_id_int)
+        st.sidebar.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
+    else:
+        st.sidebar.error("Thiếu hoặc sai League ID.")
+
+if sb_sync_points:
+    if current_gw and league_id_int:
+        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
+            sync_gw_points(current_gw, finished, league_id_int)
+        st.sidebar.success("Done!")
+    elif not league_id_int:
+        st.sidebar.error("Thiếu hoặc sai League ID.")
+    else:
+        st.sidebar.error("Không xác định được Current GW.")
+
+if sb_recompute:
+    if current_gw:
+        with st.spinner("Tính BXH..."):
+            # Ở đây BXH được build khi bạn bấm 'Xây BXH' trong tab,
+            # nên ta chỉ báo thành công (hoặc bạn có thể gọi compute_h2h_results_for_gw + build_h2h_table nếu muốn)
+            pass
+        st.sidebar.success("Done!")
 
 # =========================
 # FPL API helpers
@@ -826,7 +858,7 @@ def build_h2h_table(upto_gw: int) -> pd.DataFrame:
     # Lưu bảng để UI lần sau đọc nhanh
     gs_upsert("h2h_table", ["entry_id"], agg.to_dict(orient="records"))
 
-    return agg[["rank","entry_name","Pld","W","D","L","P"]]
+    return agg[["rank","entry_name","P","GF","W","D","L",]]
 
 def build_h2h_results_view(league_id: int, gw: int) -> pd.DataFrame:
     """
@@ -863,7 +895,6 @@ def build_h2h_results_view(league_id: int, gw: int) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     # sắp xếp để trận có điểm cao nổi bật (tuỳ ý)
     return df.sort_values(["_pa", "_pb"], ascending=False).drop(columns=["_pa","_pb"]).reset_index(drop=True)
-
 
 
 def recompute_rank(gw: int) -> pd.DataFrame:
@@ -964,39 +995,7 @@ with m_left:
 with m_right:
     st.metric("Finished?", "Yes" if finished else "No")
 
-st.write("")  # spacing nhẹ
-
-# Hàng nút: 3 nút đều nhau, full width
-b1, b2, b3 = st.columns(3, gap="large")
-
-with b1:
-    if st.button("Sync members", use_container_width=True):
-        if league_id_int:
-            with st.spinner("Đang đồng bộ danh sách đội..."):
-                dfm = sync_members_to_db(league_id_int)
-            st.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
-        else:
-            st.error("Thiếu hoặc sai League ID.")
-
-with b2:
-    if st.button("Sync points (current GW)", use_container_width=True):
-        if current_gw and league_id_int:
-            with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
-                sync_gw_points(current_gw, finished, league_id_int)
-            st.success("Done!")
-        elif not league_id_int:
-            st.error("Thiếu hoặc sai League ID.")
-        else:
-            st.error("Không xác định được Current GW.")
-
-with b3:
-    if st.button("Recompute rank", use_container_width=True):
-        if current_gw:
-            with st.spinner("Tính BXH..."):
-                pass  # (giữ logic hiện tại: đang tính trong tab)
-            st.success("Done!")
-
-st.divider()
+st.write("")  
 
 # =========================
 # Tab layout
@@ -1004,8 +1003,6 @@ st.divider()
 tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
 
 with tab1:  # 🏆 BXH H2H
-    st.subheader("Bảng xếp hạng Head-to-Head (3–1–0)")
-
     if not league_id_int:
         st.warning("Hãy nhập đúng H2H League ID ở sidebar.")
     else:
