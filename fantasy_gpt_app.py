@@ -860,6 +860,44 @@ def build_h2h_table(upto_gw: int) -> pd.DataFrame:
 
     return agg[["rank","entry_name","P","GF","W","D","L",]]
 
+def build_h2h_table_range(gw_from: int, gw_to: int) -> pd.DataFrame:
+    df = gs_select("h2h_results", where={
+        "gw": "gte." + str(gw_from)
+    })  # lọc từ gw_from
+
+    df = df[df["gw"] <= gw_to]  # lọc thêm gw_to nếu cần
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df["win"]  = (df["pts"] == 3).astype(int)
+    df["draw"] = (df["pts"] == 1).astype(int)
+    df["loss"] = (df["pts"] == 0).astype(int)
+
+    agg = df.groupby("entry_id").agg(
+        P=("pts","sum"),
+        Pld=("gw","count"),
+        W=("win","sum"),
+        D=("draw","sum"),
+        L=("loss","sum"),
+        GF=("gf","sum"),
+        GA=("ga","sum"),
+    ).reset_index()
+    agg["GD"] = agg["GF"] - agg["GA"]
+
+    mems = gs_select("league_members")
+    if not mems.empty:
+        agg = agg.merge(mems[["entry_id","entry_name"]], on="entry_id", how="left")
+    else:
+        agg["entry_name"] = agg["entry_id"].astype(str)
+
+    agg = agg.sort_values(["P","GF"], ascending=[False, False]).reset_index(drop=True)
+    agg["rank"] = np.arange(1, len(agg)+1)
+
+    gs_upsert("h2h_table", ["entry_id"], agg.to_dict(orient="records"))
+
+    return agg[["rank","entry_name","P","GF","W","D","L"]]
+
 def build_h2h_results_view(league_id: int, gw: int) -> pd.DataFrame:
     """
     Tạo bảng 'KẾT QUẢ' cho 1 GW: mỗi dòng là một cặp (Nhóm A vs Nhóm B, điểm).
@@ -1022,12 +1060,21 @@ with tab1:  # 🏆 BXH H2H
                 )
 
             with c2:
-                upto_val = st.number_input(
-                    "Gộp BXH tới GW",
-                    min_value=1,
-                    value=int(current_gw or 1),
-                    step=1
-                )
+                col_from, col_to = st.columns(2)
+                with col_from:
+                    gw_from = st.number_input(
+                        "Từ GW",
+                        min_value=1,
+                        value=1,
+                        step=1
+                    )
+                with col_to:
+                    gw_to = st.number_input(
+                        "Đến GW",
+                        min_value=gw_from,
+                        value=int(current_gw or 1),
+                        step=1
+                    )
 
             with c3:
                 st.markdown("&nbsp;", unsafe_allow_html=True)  # đệm cho hàng nút
@@ -1046,7 +1093,7 @@ with tab1:  # 🏆 BXH H2H
             left, right = st.columns([1.1, 1.2], gap="large")
 
             # ===== BXH (trái)
-            tbl = build_h2h_table(int(upto_val))
+            tbl = build_h2h_table_range(gw_from, gw_to)
             if tbl is None or tbl.empty:
                 left.info("Chưa có dữ liệu BXH. Hãy Cập nhật H2H trước.")
             else:
