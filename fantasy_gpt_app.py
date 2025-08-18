@@ -325,32 +325,6 @@ with st.sidebar.expander("🔧 Admin tools", expanded=True):
     sb_sync_points  = st.button("Sync points (current GW)", use_container_width=True)
     sb_recompute    = st.button("Recompute rank", use_container_width=True)
 
-# Hành động cho các nút ở sidebar
-if sb_sync_members:
-    if league_id_int:
-        with st.spinner("Đang đồng bộ danh sách đội..."):
-            dfm = sync_members_to_db(league_id_int)
-        st.sidebar.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
-    else:
-        st.sidebar.error("Thiếu hoặc sai League ID.")
-
-if sb_sync_points:
-    if current_gw and league_id_int:
-        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
-            sync_gw_points(current_gw, finished, league_id_int)
-        st.sidebar.success("Done!")
-    elif not league_id_int:
-        st.sidebar.error("Thiếu hoặc sai League ID.")
-    else:
-        st.sidebar.error("Không xác định được Current GW.")
-
-if sb_recompute:
-    if current_gw:
-        with st.spinner("Tính BXH..."):
-            # Ở đây BXH được build khi bạn bấm 'Xây BXH' trong tab,
-            # nên ta chỉ báo thành công (hoặc bạn có thể gọi compute_h2h_results_for_gw + build_h2h_table nếu muốn)
-            pass
-        st.sidebar.success("Done!")
 
 # =========================
 # FPL API helpers
@@ -570,12 +544,9 @@ def is_gameweek_finished(gw: int) -> bool:
     return False
 
 def get_final_or_live_points(entry_id: int, gw: int) -> int:
-    info = gw_scores.get(entry_id)
-    if info and "points" in info:
-        return info["points"]
-    else:
-        chip = info.get("chip", "") if info else ""
-        return compute_live_points_for_entry(entry_id, gw, active_chip=chip)
+    """Ưu tiên official nếu có; nếu chưa có thì lấy live; trả về 0 nếu chưa có gì."""
+    return int(get_points_map_for_gw(gw).get(entry_id, 0))
+
 
 
 def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = None) -> int:
@@ -639,22 +610,32 @@ def persist_final_gw_scores(entry_ids: list[int], gw: int):
 # ✅ Đúng:
 
 def build_rankings(entry_ids: list[int], gw: int) -> list[dict]:
-    entry_gw_scores = []
+    mems = gs_select("league_members")
+    name_map = dict(zip(mems["entry_id"].astype(int), mems["entry_name"])) if not mems.empty else {}
+
+    chip_map = {}
+    df_gw = gs_select("gw_scores", where={"gw": "eq."+str(gw)})
+    if not df_gw.empty:
+        for _, r in df_gw.iterrows():
+            try:
+                chip_map[int(r["entry_id"])] = r.get("chip", "") or ""
+            except:
+                pass
+
+    rows = []
     for entry_id in entry_ids:
-        points = get_final_or_live_points(entry_id, gw)
-        entry_gw_scores.append({
+        rows.append({
             "entry": entry_id,
-            "entry_name": entry_name_map.get(entry_id, ""),  # ✅ thêm dòng này
-            "player_name": player_name_map.get(entry_id, ""),
-            "points": points,
-            "chip": entry_chip_map.get(entry_id, "")
+            "entry_name": name_map.get(entry_id, str(entry_id)),
+            "points": get_final_or_live_points(entry_id, gw),
+            "chip": chip_map.get(entry_id, "")
         })
 
+    rows.sort(key=lambda x: x["points"], reverse=True)
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return rows
 
-    entry_gw_scores = sorted(entry_gw_scores, key=lambda x: x["points"], reverse=True)
-    for i, row in enumerate(entry_gw_scores, start=1):
-        row["rank"] = i
-    return entry_gw_scores
 
 
 # H2H members (pagination)
@@ -736,22 +717,22 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
     rows = []
     for _, m in dfm.iterrows():
         entry_id = int(m["entry_id"])
+        chip = ""  # ✅ luôn khởi tạo
+
         if finished:
-            # dùng official từ history khi GW đã kết thúc
+            # Dùng official từ history
             h = get_entry_history(entry_id)
             current = h.get("current", [])
             row = next((r for r in current if r.get("event") == gw), None)
             pts = int(row.get("points", 0)) if row else 0
             is_live = False
         else:
-            # dùng LIVE points (picks + live + autosubs + chips)
+            # LIVE points
             try:
                 picks = get_entry_picks(entry_id, gw)
-                chip = picks.get("active_chip", "")
+                chip = picks.get("active_chip", "") or ""
                 pts = compute_live_points_for_entry(entry_id, gw, active_chip=chip)
-
             except Exception:
-                # fallback an toàn nếu picks API lỗi
                 h = get_entry_history(entry_id)
                 current = h.get("current", [])
                 row = next((r for r in current if r.get("event") == gw), None)
@@ -763,9 +744,10 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
             "gw": int(gw),
             "points": int(pts),
             "live": is_live,
-            "chip": chip,
+            "chip": chip,  # ✅ giờ luôn tồn tại
             "updated_at": pd.Timestamp.utcnow().isoformat(),
         })
+
 
     if rows:
         gs_upsert("gw_scores", ["entry_id","gw"], rows)
@@ -1008,6 +990,32 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
 # =========================
 current_gw, finished = get_current_event()
 gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
+# Hành động cho các nút ở sidebar
+if sb_sync_members:
+    if league_id_int:
+        with st.spinner("Đang đồng bộ danh sách đội..."):
+            dfm = sync_members_to_db(league_id_int)
+        st.sidebar.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
+    else:
+        st.sidebar.error("Thiếu hoặc sai League ID.")
+
+if sb_sync_points:
+    if current_gw and league_id_int:
+        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
+            sync_gw_points(current_gw, finished, league_id_int)
+        st.sidebar.success("Done!")
+    elif not league_id_int:
+        st.sidebar.error("Thiếu hoặc sai League ID.")
+    else:
+        st.sidebar.error("Không xác định được Current GW.")
+
+if sb_recompute:
+    if current_gw:
+        with st.spinner("Tính BXH..."):
+            # Ở đây BXH được build khi bạn bấm 'Xây BXH' trong tab,
+            # nên ta chỉ báo thành công (hoặc bạn có thể gọi compute_h2h_results_for_gw + build_h2h_table nếu muốn)
+            pass
+        st.sidebar.success("Done!")
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
 if INVITE_CODE:
@@ -1040,7 +1048,7 @@ st.write("")
 # =========================
 tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
 
-with tab1:  # 🏆 BXH H2H
+with tab1:
     if not league_id_int:
         st.warning("Hãy nhập đúng H2H League ID ở sidebar.")
     else:
@@ -1057,35 +1065,34 @@ with tab1:  # 🏆 BXH H2H
                 st.markdown("### &nbsp;", unsafe_allow_html=True)
                 do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
 
+        # ✅ Đặt xử lý sau form nhưng vẫn trong else:
+        if do_both:
+            compute_h2h_results_for_gw(league_id_int, gw_result)
 
-        # ==== Xử lý sau khi nhấn nút ====
-    if do_both:
-        compute_h2h_results_for_gw(league_id_int, gw_result)
+            col_left, col_right = st.columns(2)
 
-        col_left, col_right = st.columns(2)
+            # === BXH ===
+            tbl = build_h2h_table_range(gw_from, gw_to)
+            if tbl is not None and not tbl.empty:
+                col_left.markdown(f"### 📊 BẢNG XẾP HẠNG ({gw_from} → {gw_to})")
+                tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
+                col_left.dataframe(
+                    tbl_vn[["Hạng", "Tên đội", "Điểm", "Điểm tích lũy", "Thắng", "Hòa", "Thua"]].set_index("Hạng"),
+                    use_container_width=True
+                )
+            else:
+                col_left.info("Chưa có dữ liệu BXH.")
 
-        # === BXH ===
-        tbl = build_h2h_table_range(gw_from, gw_to)
-        if tbl is not None and not tbl.empty:
-            col_left.markdown(f"### 📊 BẢNG XẾP HẠNG ({gw_from} → {gw_to})")
-            tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
-            col_left.dataframe(
-                tbl_vn[["Hạng", "Tên đội", "Điểm", "Điểm tích lũy", "Thắng", "Hòa", "Thua"]].set_index("Hạng"),
-                use_container_width=True
-            )
-        else:
-            col_left.info("Chưa có dữ liệu BXH.")
-
-        # === KẾT QUẢ ===
-        df_res = build_h2h_results_view(league_id_int, gw_result)
-        if df_res is not None and not df_res.empty:
-            col_right.markdown(f"### 📝 KẾT QUẢ — GW {gw_result}")
-            col_right.dataframe(
-                df_res.rename(columns={"": "Tỷ số"}).set_index("Vòng"),
-                use_container_width=True
-            )
-        else:
-            col_right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
+            # === KẾT QUẢ ===
+            df_res = build_h2h_results_view(league_id_int, gw_result)
+            if df_res is not None and not df_res.empty:
+                col_right.markdown(f"### 📝 KẾT QUẢ — GW {gw_result}")
+                col_right.dataframe(
+                    df_res.rename(columns={"": "Tỷ số"}).set_index("Vòng"),
+                    use_container_width=True
+                )
+            else:
+                col_right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
 
 
 with tab2:
