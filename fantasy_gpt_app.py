@@ -826,7 +826,8 @@ def build_h2h_table(upto_gw: int) -> pd.DataFrame:
     # Lưu bảng để UI lần sau đọc nhanh
     gs_upsert("h2h_table", ["entry_id"], agg.to_dict(orient="records"))
 
-    return agg[["rank","entry_name","Pld","W","D","L","GF","GA","GD","P"]]
+    return agg[["rank","entry_name","Pld","W","D","L","P"]]
+
 
 
 
