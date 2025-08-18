@@ -1055,7 +1055,7 @@ with tab1:  # 🏆 BXH H2H
                 tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
                 # Nếu muốn hiển thị thêm BT/BB/HS → sửa build_h2h_table trả về đủ cột rồi chọn ở đây
                 left.dataframe(
-                    tbl_vn[["Hạng","Tên đội","Điểm","Điểm tích lũy","Thắng","Hòa","Thua","Điểm"]].set_index("Hạng"),
+                    tbl_vn[["Hạng","Tên đội","Điểm","Điểm tích lũy","Thắng","Hòa","Thua"]].set_index("Hạng"),
                     use_container_width=True
                 )
 
