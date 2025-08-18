@@ -828,6 +828,41 @@ def build_h2h_table(upto_gw: int) -> pd.DataFrame:
 
     return agg[["rank","entry_name","Pld","W","D","L","P"]]
 
+def build_h2h_results_view(league_id: int, gw: int) -> pd.DataFrame:
+    """
+    Tạo bảng 'KẾT QUẢ' cho 1 GW: mỗi dòng là một cặp (Nhóm A vs Nhóm B, điểm).
+    Ưu tiên dùng official points nếu đã 'ghi điểm', nếu chưa thì dùng live.
+    """
+    # điểm mỗi đội trong GW
+    pts_map = get_points_map_for_gw(gw)
+    if not pts_map:
+        return pd.DataFrame()
+
+    # tên đội
+    mems = gs_select("league_members")[["entry_id", "entry_name"]]
+    name_map = dict(zip(mems["entry_id"].astype(int), mems["entry_name"]))
+
+    # danh sách cặp đấu từ API
+    matches = fetch_h2h_matches(int(league_id), int(gw))
+    if not matches:
+        return pd.DataFrame()
+
+    rows = []
+    for m in matches:
+        a = int(m["entry_1_entry"])
+        b = int(m["entry_2_entry"])
+        pa = int(pts_map.get(a, 0))
+        pb = int(pts_map.get(b, 0))
+        rows.append({
+            "Vòng": gw,
+            "Nhóm A": name_map.get(a, str(a)),
+            "": f"{pa}  —  {pb}",             # cột điểm ở giữa
+            "Nhóm B": name_map.get(b, str(b)),
+            "_pa": pa, "_pb": pb              # cột phụ để sort/hilite (không hiển thị)
+        })
+    df = pd.DataFrame(rows)
+    # sắp xếp để trận có điểm cao nổi bật (tuỳ ý)
+    return df.sort_values(["_pa", "_pb"], ascending=False).drop(columns=["_pa","_pb"]).reset_index(drop=True)
 
 
 
@@ -1052,25 +1087,36 @@ with tab2:  # 🏆 BXH H2H
             gw_calc = int(current_gw or 1)
 
         ran_any = False
-        if do_update or do_both:
-            with st.spinner(f"Đang tính H2H cho GW {gw_calc}..."):
-                df_h2h = compute_h2h_results_for_gw(league_id_int, gw_calc)
-            if df_h2h is None or df_h2h.empty:
-                st.warning("Không có dữ liệu để cập nhật (kiểm tra gw_scores / fixtures).")
-            else:
-                st.success(f"Đã cập nhật {len(df_h2h)//2} trận H2H cho GW {gw_calc}.")
-                ran_any = True
-
         if do_build or do_both or ran_any:
+            # trái: BXH H2H; phải: Kết quả GW (giống ảnh)
+            left, right = st.columns([1.1, 1.2], gap="large")
+
+            # ===== BXH (trái)
             tbl = build_h2h_table(int(upto_val))
             if tbl is None or tbl.empty:
-                st.info("Chưa có dữ liệu BXH. Hãy Cập nhật H2H trước.")
+                left.info("Chưa có dữ liệu BXH. Hãy Cập nhật H2H trước.")
             else:
-                # Đổi nhãn → tiếng Việt và bỏ index bên trái
+                left.subheader("BẢNG XẾP HẠNG")
+                # Đổi nhãn TV và chọn cột gọn giống ảnh
                 tbl_vn = show_vn(tbl, "h2h_table").reset_index(drop=True)
-                # Nếu muốn ẩn GF/GA/GD, chỉ giữ các cột sau:
-                # tbl_vn = tbl_vn[["Hạng","Tên đội","Trận","Thắng","Hòa","Thua","Điểm"]]
-                st.dataframe(tbl_vn, use_container_width=True)
+                # Nếu muốn hiển thị thêm BT/BB/HS → sửa build_h2h_table trả về đủ cột rồi chọn ở đây
+                left.dataframe(
+                    tbl_vn[["Hạng","Tên đội","Trận","Thắng","Hòa","Thua","Điểm"]],
+                    use_container_width=True
+                )
+
+            # ===== Kết quả (phải)
+            right.subheader("KẾT QUẢ")
+            # dùng gw_calc (GW vừa cập nhật) hoặc cho người dùng chọn GW khác:
+            gw_for_results = gw_calc
+            df_res = build_h2h_results_view(league_id_int, int(gw_for_results))
+            if df_res is None or df_res.empty:
+                right.info(f"Không có dữ liệu kết quả cho GW {gw_for_results}.")
+            else:
+                right.dataframe(
+                df_res.rename(columns={"": "Tỷ số"}),  # đặt tên cột điểm giữa nếu muốn
+                use_container_width=True
+                )
 
 
 with tab3:
