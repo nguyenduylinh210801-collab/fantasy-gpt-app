@@ -319,13 +319,38 @@ if st.sidebar.button("Test Google Sheets"):
     except Exception as e:
         st.sidebar.error(f"Lỗi GS: {e}")
 
-current_gw, finished = get_current_event()
-
 # === Sidebar: Admin tools ===
 with st.sidebar.expander("🔧 Admin tools", expanded=True):
     sb_sync_members = st.button("Sync members", use_container_width=True)
     sb_sync_points  = st.button("Sync points (current GW)", use_container_width=True)
     sb_recompute    = st.button("Recompute rank", use_container_width=True)
+
+# Hành động cho các nút ở sidebar
+if sb_sync_members:
+    if league_id_int:
+        with st.spinner("Đang đồng bộ danh sách đội..."):
+            dfm = sync_members_to_db(league_id_int)
+        st.sidebar.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
+    else:
+        st.sidebar.error("Thiếu hoặc sai League ID.")
+
+if sb_sync_points:
+    if current_gw and league_id_int:
+        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
+            sync_gw_points(current_gw, finished, league_id_int)
+        st.sidebar.success("Done!")
+    elif not league_id_int:
+        st.sidebar.error("Thiếu hoặc sai League ID.")
+    else:
+        st.sidebar.error("Không xác định được Current GW.")
+
+if sb_recompute:
+    if current_gw:
+        with st.spinner("Tính BXH..."):
+            # Ở đây BXH được build khi bạn bấm 'Xây BXH' trong tab,
+            # nên ta chỉ báo thành công (hoặc bạn có thể gọi compute_h2h_results_for_gw + build_h2h_table nếu muốn)
+            pass
+        st.sidebar.success("Done!")
 
 # =========================
 # FPL API helpers
@@ -978,36 +1003,10 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
     df["entry_name"] = names
     return df.sort_values("p_top1", ascending=False)
 
-# Hành động cho các nút ở sidebar
-if sb_sync_members:
-    if league_id_int:
-        with st.spinner("Đang đồng bộ danh sách đội..."):
-            dfm = sync_members_to_db(league_id_int)
-        st.sidebar.success(f"Đã lưu {len(dfm)} đội vào Google Sheets.")
-    else:
-        st.sidebar.error("Thiếu hoặc sai League ID.")
-
-if sb_sync_points:
-    if current_gw and league_id_int:
-        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
-            sync_gw_points(current_gw, finished, league_id_int)
-        st.sidebar.success("Done!")
-    elif not league_id_int:
-        st.sidebar.error("Thiếu hoặc sai League ID.")
-    else:
-        st.sidebar.error("Không xác định được Current GW.")
-
-if sb_recompute:
-    if current_gw:
-        with st.spinner("Tính BXH..."):
-            # Ở đây BXH được build khi bạn bấm 'Xây BXH' trong tab,
-            # nên ta chỉ báo thành công (hoặc bạn có thể gọi compute_h2h_results_for_gw + build_h2h_table nếu muốn)
-            pass
-        st.sidebar.success("Done!")
 # =========================
 # UI Controls (đẹp & cân đối)
 # =========================
-
+current_gw, finished = get_current_event()
 gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
