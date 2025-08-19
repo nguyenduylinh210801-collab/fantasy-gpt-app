@@ -499,66 +499,78 @@ def _formation_ok(counts):
         total == 11
     )
 
-def _apply_basic_autosubs(starters, bench_order, minutes_map, elem_type_map, captain_id, vice_id, triple_captain=False):
+def _apply_basic_autosubs(
+    starters, bench_order, minutes_map, elem_type_map,
+    captain_id, vice_id, triple_captain=False
+):
     """
-    starters: list of 11 element ids
-    bench_order: list of 4 element ids in bench order 12..15
-    Return: (final_eleven, new_captain_id)
-    - Rule: replace starters with 0' by bench players (>0') in bench order if formation remains valid.
-    - Captain/vice: if captain 0' and vice >0', vice becomes (triple) captain.
+    Quy tắc FPL:
+      - Chỉ thay cầu thủ DNP (minutes==0).
+      - GK (type=1) chỉ thay GK; outfield (2/3/4) chỉ thay outfield.
+      - Duyệt bench theo đúng thứ tự 12→15; chỉ nhận cầu thủ bench có phút >0.
+      - Mỗi swap phải giữ được formation tối thiểu: 1 GK, ≥3 DEF, ≥2 MID, ≥1 FWD; tổng 11 khi có đủ người.
+      - Chuyển C→VC chỉ khi captain **DNP** (minutes==0). Captain 0 điểm nhưng **có phút** ⇒ KHÔNG chuyển.
     """
-    playing = [e for e in starters if minutes_map.get(e, 0) > 0]
-    dnp = [e for e in starters if minutes_map.get(e, 0) == 0]
+    def played(x): return minutes_map.get(x, 0) > 0
+    def typ(x):    return elem_type_map.get(x, 0)
 
-    # Try to sub in bench players (who played) one-by-one
-    final = playing.copy()
+    cur = starters[:]
+    dnp = [x for x in starters if not played(x)]
+
     for b in bench_order:
-        if minutes_map.get(b, 0) == 0:
+        if not played(b):
             continue
-        if not dnp:
-            break
-        # try replacing a dnp that keeps formation valid
+        bt = typ(b)
+
+        if bt == 1:
+            # GK bench chỉ thay GK DNP xuất phát
+            cand = next((x for x in dnp if typ(x) == 1), None)
+            if cand is None:
+                continue
+            cur = [b if x == cand else x for x in cur]
+            dnp.remove(cand)
+            continue
+
+        # outfield bench: thử thay một outfield DNP sao cho vẫn hợp lệ
+        of_dnp = [x for x in dnp if typ(x) in (2, 3, 4)]
         replaced = None
-        for s in list(dnp):
-            test = final + [b] + [x for x in dnp if x != s]  # naive check needs exactly 11; we’ll emulate:
-            # Build test eleven: final + b + remaining dnp minus one s
-            test_eleven = final + [b]  # add bench player
-            # add remaining dnp except the one removed until reach 11 (but we want exactly 11: final size may be <11)
-            # The proper approach: final currently <11; choose one dnp to DROP, not add others.
-            # So recompute from starters: (starters - {s}) U {b} U (others that played already accounted in 'final')
-            # Simpler: construct from current starters swap s->b
-            starters_candidate = [x if x != s else b for x in starters]
-            counts = _count_types([x for x in starters_candidate if minutes_map.get(x, 0) > 0 or x == b], elem_type_map)
-            # Ensure we are evaluating exactly 11 on the pitch:
-            eleven = []
-            for x in starters_candidate:
-                # choose played ones; if x==b, it's coming from bench and plays >0
-                if x == b or minutes_map.get(x, 0) > 0:
-                    eleven.append(x)
-            # If still <11 due to multiple DNPs, we'll keep swapping in subsequent iterations
-            # Check formation only when we have <=11; we accept intermediate states <11
-            if len(eleven) <= 11:
-                # When not yet 11, we can't fully validate; accept swap and continue
-                replaced = s
-                starters = starters_candidate
+        for s in of_dnp:
+            test = [b if x == s else x for x in cur]
+
+            # On-pitch = những ai có phút >0 sau khi swap
+            on_pitch = [x for x in test if played(x)]
+            # b chắc chắn >0' (đã check), đảm bảo có trong on_pitch
+            if b not in on_pitch:
+                on_pitch.append(b)
+
+            # Đếm formation tối thiểu
+            counts = _count_types(on_pitch[:11], elem_type_map)
+            ok_roles = (
+                counts[1] == 1 and
+                counts[2] >= 3 and
+                counts[3] >= 2 and
+                counts[4] >= 1
+            )
+            if ok_roles:
+                cur = test
                 dnp.remove(s)
-                final = [x for x in eleven]  # recomputed playing so far
+                replaced = s
                 break
         if replaced is None:
-            # couldn't find a valid swap (formation-wise); skip this bench
             continue
 
-    # If after all subs we still have <11 (e.g., no bench played), formation check not needed
-    # Captain/vice adjustment
+    # Chốt 11 người cuối cùng: chỉ ai có phút >0
+    final_eleven = [x for x in cur if played(x)][:11]
+
+    # Captain/Vice
     new_captain = captain_id
-    cap_minutes = minutes_map.get(captain_id, 0)
-    vice_minutes = minutes_map.get(vice_id, 0)
-    if cap_minutes == 0 and vice_minutes > 0:
+    cap_dnp = (minutes_map.get(captain_id, 0) == 0) if captain_id else False
+    vice_ok  = (minutes_map.get(vice_id, 0) > 0) if vice_id else False
+    if cap_dnp and vice_ok:
         new_captain = vice_id
 
-    # Ensure exactly 11 returned; if more (shouldn't), trim; if less, accept as-is for scoring (FPL would end with <11)
-    final_eleven = final[:11]
     return final_eleven, new_captain
+
 
 
 def get_final_or_live_points(entry_id: int, gw: int) -> int:
@@ -583,28 +595,27 @@ def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = Non
     captain_id = next((p["element"] for p in plist if p.get("is_captain")), None)
     vice_id = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
-    final_eleven, new_captain = _apply_basic_autosubs(
-        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
-    )
+    # --- TÍNH TỔNG ---
+    # Base: cộng 11 người cuối
+    total = sum(pts_map.get(el, 0) for el in final_eleven)
 
-    if not is_bb:
-        final_eleven = final_eleven[:11]
-
-    mult = {el: 0 for el in starters + bench}
-    for el in final_eleven:
-        mult[el] = 1
-
+    # Bench Boost: cộng thêm 4 ghế
     if is_bb:
-        for el in bench:
-            mult[el] = 1
+        total += sum(pts_map.get(el, 0) for el in bench)
 
-    if new_captain is not None:
-        mult[new_captain] = mult.get(new_captain, 0) * (3 if is_tc else 2)
-        if captain_id and captain_id != new_captain and captain_id in mult:
-            mult[captain_id] = 0 if not is_bb else mult[captain_id]
+    # Captain multiplier: chỉ cộng thêm nếu captain nằm trong tập đang được tính điểm (11 người, và nếu BB thì cả bench)
+    def in_counting(x):
+        if x is None:
+            return False
+        return (x in final_eleven) or (is_bb and x in bench)
 
-    total = sum(pts_map.get(el, 0) * m for el, m in mult.items())
+    if new_captain and in_counting(new_captain):
+        base = pts_map.get(new_captain, 0)
+        extra = base if not is_tc else base * 2   # 2x => +1x; 3x => +2x
+        total += extra
+
     return int(total)
+
 
 def persist_final_gw_scores(entry_ids: list[int], gw: int):
     rows = []
@@ -778,29 +789,28 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
         gs_upsert("gw_scores", ["entry_id","gw"], rows)
 
 def get_points_map_for_gw(gw: int) -> dict[int, int]:
-    """
-    Ưu tiên official (live==False) nếu tồn tại; nếu không có thì lấy live (live==True).
-    Nếu một entry có nhiều dòng => chọn official trước, ngược lại chọn điểm cao nhất.
-    """
     df = gs_select("gw_scores", where={"gw": "eq."+str(gw)})
     if df.empty:
         return {}
     df = df.copy()
     df["points"] = pd.to_numeric(df["points"], errors="coerce").fillna(0).astype(int)
 
-    # Chia nhóm theo entry_id, pick official nếu có, else max points
-    best_rows = []
+    # Chuẩn hoá 'live' về bool
+    if "live" in df.columns:
+        df["live_flag"] = (
+            df["live"].astype(str).str.strip().str.lower()
+              .map({"true": True, "false": False})
+              .fillna(False)
+        )
+    else:
+        df["live_flag"] = True  # thận trọng
+
+    best = {}
     for eid, g in df.groupby("entry_id"):
-        g = g.sort_values(["live","points"], ascending=[True, False])  # live=False trước, rồi points giảm dần
-        # Nếu không có cột 'live' (trường hợp hiếm), chỉ cần lấy max points
-        if "live" not in g.columns:
-            row = g.sort_values("points", ascending=False).iloc[0]
-        else:
-            # ưu tiên official (live==False); nếu không có, lấy hàng đầu (max points)
-            official = g[g["live"] == False]
-            row = official.iloc[0] if not official.empty else g.iloc[0]
-        best_rows.append((int(eid), int(row["points"])))
-    return dict(best_rows)
+        g = g.sort_values(["live_flag", "points"], ascending=[True, False])  # official trước
+        row = g.iloc[0]
+        best[int(eid)] = int(row["points"])
+    return best
 
 def compute_h2h_results_for_gw(league_id: int, gw: int) -> pd.DataFrame:
     pts_map = get_points_map_for_gw(gw)
