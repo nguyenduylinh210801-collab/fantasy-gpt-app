@@ -332,6 +332,49 @@ with st.sidebar.expander("🔧 Admin tools", expanded=True):
 SESSION = requests.Session()
 BASE = "https://fantasy.premierleague.com/api"
 
+# === PATCH 1: Official detector & Active GW resolver ===
+@st.cache_data(ttl=120)
+def is_event_official(gw: int) -> bool:
+    """Official khi BOTH finished & data_checked."""
+    try:
+        r = SESSION.get(f"{BASE}/event/{gw}/", timeout=15)
+        if r.status_code == 200:
+            d = r.json()
+            return bool(d.get("finished")) and bool(d.get("data_checked"))
+    except:
+        pass
+    return False
+
+@st.cache_data(ttl=120)
+def get_active_gw() -> tuple[int | None, bool]:
+    """
+    Trả về (active_gw, is_official):
+    - Còn 'is_current' -> active_gw = current.id (is_official phụ thuộc data_checked).
+    - Không còn 'is_current' -> active_gw = is_next.id - 1 (vòng vừa xong, thường official).
+    - Cuối mùa -> GW lớn nhất.
+    """
+    bs = get_bootstrap()
+    events = bs.get("events", []) or []
+    cur = next((e for e in events if e.get("is_current")), None)
+    if cur:
+        gw = int(cur["id"])
+        return gw, is_event_official(gw)
+
+    nxt = next((e for e in events if e.get("is_next")), None)
+    if nxt:
+        prev_id = int(nxt["id"]) - 1
+        if prev_id >= 1:
+            return prev_id, is_event_official(prev_id)
+        # Pre-season trước GW1
+        return int(nxt["id"]), False
+
+    if events:
+        last = max(events, key=lambda x: int(x["id"]))
+        gw = int(last["id"])
+        return gw, is_event_official(gw)
+    return None, False
+
+
 @st.cache_data(ttl=180)
 def get_h2h_matches_page(league_id: int, gw: int, page: int = 1):
     url = f"{BASE}/leagues-h2h-matches/league/{league_id}/?page={page}&event={gw}"
@@ -357,24 +400,6 @@ def fetch_h2h_matches(league_id: int, gw: int):
 def get_bootstrap():
     return SESSION.get(f"{BASE}/bootstrap-static/").json()
 
-@st.cache_data(ttl=120)
-def get_current_event() -> tuple[int | None, bool]:
-    data = get_bootstrap()
-    events = data.get("events", []) or []
-    if not events:
-        return None, True
-
-    now_utc = pd.Timestamp.utcnow()
-
-    # GW có deadline ở tương lai gần nhất -> coi là "Current GW" để hiển thị/đồng bộ
-    upcoming = next((e for e in events if pd.to_datetime(e["deadline_time"]) > now_utc), None)
-    if upcoming:
-        gw_id = int(upcoming["id"])
-        return gw_id, bool(is_gameweek_finished(gw_id))
-
-    # Không còn deadline ở tương lai => cuối mùa, trả về GW cuối cùng và finished=True
-    last_ev = max(events, key=lambda x: int(x["id"]))
-    return int(last_ev["id"]), True
 
 
 @st.cache_data(ttl=180)
@@ -535,16 +560,6 @@ def _apply_basic_autosubs(starters, bench_order, minutes_map, elem_type_map, cap
     final_eleven = final[:11]
     return final_eleven, new_captain
 
-def is_gameweek_finished(gw: int) -> bool:
-    url = f"https://fantasy.premierleague.com/api/event/{gw}/"
-    try:
-        r = requests.get(url)
-        if r.status_code == 200:
-            data = r.json()
-            return data.get("finished", False)
-    except:
-        pass
-    return False
 
 def get_final_or_live_points(entry_id: int, gw: int) -> int:
     """Ưu tiên official nếu có; nếu chưa có thì lấy live; trả về 0 nếu chưa có gì."""
@@ -710,6 +725,13 @@ def sync_members_to_db(league_id: int) -> pd.DataFrame:
     if members:
         gs_upsert("league_members", ["entry_id"], members)
     return pd.DataFrame(members)
+
+# === PATCH 2: Wrapper sync theo trạng thái official của GW ===
+def sync_gw_points_for(gw: int, league_id: int):
+    """Nếu GW official -> ghi official; nếu chưa -> ghi live (tạm)."""
+    off = is_event_official(int(gw))
+    sync_gw_points(int(gw), off, int(league_id))
+
 
 def sync_gw_points(gw: int, finished: bool, league_id: int):
     # read members (prefer DB, fallback to API)
@@ -991,7 +1013,7 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
 # =========================
 # UI Controls (đẹp & cân đối)
 # =========================
-current_gw, finished = get_current_event()
+current_gw, finished = get_active_gw()
 gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
 # Hành động cho các nút ở sidebar
 if sb_sync_members:
@@ -1002,15 +1024,24 @@ if sb_sync_members:
     else:
         st.sidebar.error("Thiếu hoặc sai League ID.")
 
+# === PATCH 4: Nếu GW đang quan tâm đã official, đảm bảo DB có official (ghi đè live nếu cần)
+if current_gw and league_id_int and is_event_official(int(current_gw)):
+    try:
+        sync_gw_points_for(int(current_gw), int(league_id_int))
+    except Exception as e:
+        st.sidebar.info(f"Không thể auto-sync official cho GW{current_gw}: {e}")
+
+
 if sb_sync_points:
     if current_gw and league_id_int:
-        with st.spinner(f"Cập nhật điểm GW{current_gw}..."):
-            sync_gw_points(current_gw, finished, league_id_int)
+        with st.spinner(f"Cập nhật điểm GW{current_gw} (official nếu đã có)..."):
+            sync_gw_points_for(int(current_gw), int(league_id_int))
         st.sidebar.success("Done!")
     elif not league_id_int:
         st.sidebar.error("Thiếu hoặc sai League ID.")
     else:
-        st.sidebar.error("Không xác định được Current GW.")
+        st.sidebar.error("Không xác định được GW.")
+
 
 if sb_recompute:
     if current_gw:
@@ -1070,7 +1101,19 @@ with tab1:
 
         # ✅ Đặt xử lý sau form nhưng vẫn trong else:
         if do_both:
-            compute_h2h_results_for_gw(league_id_int, gw_result)
+            # 0) Đảm bảo có members
+            if gs_read_df("league_members").empty and league_id_int:
+                sync_members_to_db(int(league_id_int))
+
+            # 1) Sync điểm cho dải BXH và GW kết quả (official nếu có)
+            gws_need = list(range(int(gw_from), int(gw_to) + 1))
+            if int(gw_result) not in gws_need:
+                gws_need.append(int(gw_result))
+            for g in gws_need:
+                sync_gw_points_for(int(g), int(league_id_int))
+
+            # 2) Sau khi đảm bảo gw_scores đã có official, tạo bảng kết quả & BXH
+            compute_h2h_results_for_gw(int(league_id_int), int(gw_result))
 
             col_left, col_right = st.columns(2)
 
