@@ -357,22 +357,25 @@ def fetch_h2h_matches(league_id: int, gw: int):
 def get_bootstrap():
     return SESSION.get(f"{BASE}/bootstrap-static/").json()
 
-@st.cache_data(ttl=180)
-def get_current_event():
+@st.cache_data(ttl=120)
+def get_current_event() -> tuple[int | None, bool]:
     data = get_bootstrap()
-    events = data.get("events", [])
-    for e in events:
-        if e.get("is_current"):
-            return e["id"], e.get("finished", False)
-    # Nếu không có vòng current → lấy vòng sắp diễn ra (is_next)
-    for e in events:
-        if e.get("is_next"):
-            return e["id"], False
-    # Nếu cũng không có → lấy vòng cuối đã kết thúc
-    done = [e for e in events if e.get("finished")] or []
-    if done:
-        return done[-1]["id"], True
-    return None, True
+    events = data.get("events", []) or []
+    if not events:
+        return None, True
+
+    now_utc = pd.Timestamp.utcnow()
+
+    # GW có deadline ở tương lai gần nhất -> coi là "Current GW" để hiển thị/đồng bộ
+    upcoming = next((e for e in events if pd.to_datetime(e["deadline_time"]) > now_utc), None)
+    if upcoming:
+        gw_id = int(upcoming["id"])
+        return gw_id, bool(is_gameweek_finished(gw_id))
+
+    # Không còn deadline ở tương lai => cuối mùa, trả về GW cuối cùng và finished=True
+    last_ev = max(events, key=lambda x: int(x["id"]))
+    return int(last_ev["id"]), True
+
 
 @st.cache_data(ttl=180)
 def get_event_by_id(event_id: int) -> dict:
