@@ -430,19 +430,23 @@ def _fmt_time_local(iso_str: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
 def get_event_times(event_id: int) -> tuple[str, str, str]:
     """
     Trả về (gw_name, start_time_local, deadline_local).
-    start_time ≈ deadline của GW trước (FPL không có trường start_time riêng).
+    - start_time = deadline_time của chính GW.
+    - deadline_local = deadline_time của GW tiếp theo.
     """
     data = get_bootstrap()
     events = data.get("events", [])
+
     ev = next((e for e in events if e.get("id") == event_id), None)
     if not ev:
         return ("", "", "")
-    gw_name = ev.get("name", "")
-    deadline_local = _fmt_time_local(ev.get("deadline_time"))
-    prev_ev = next((e for e in events if e.get("id") == event_id - 1), None)
-    start_local = _fmt_time_local(prev_ev.get("deadline_time")) if prev_ev else ""
-    return (gw_name, start_local, deadline_local)
 
+    gw_name = ev.get("name", "")
+    start_local = _fmt_time_local(ev.get("deadline_time"))
+
+    next_ev = next((e for e in events if e.get("id") == event_id + 1), None)
+    deadline_local = _fmt_time_local(next_ev.get("deadline_time")) if next_ev else ""
+
+    return (gw_name, start_local, deadline_local)
 
 # =========================
 # LIVE POINTS (picks + live + autosubs + chips)
@@ -1077,11 +1081,7 @@ with m_left:
     st.metric("Current GW", f"{current_gw or '-'}")
     if gw_name:
         st.caption(gw_name)
-    if gw_start:
-        st.caption(f"Start: {gw_start}")
-    if gw_deadline:
-        st.caption(f"Deadline: {gw_deadline}")
-
+#
 with m_right:
     st.metric("Finished?", "Yes" if finished else "No")
 
