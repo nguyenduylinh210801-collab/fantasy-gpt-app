@@ -1,0 +1,16 @@
+name: Ping Streamlit App
+
+on:
+  schedule:
+    # chạy mỗi 4 giờ (có thể chỉnh lại)
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}  # cho phép bấm chạy thủ công
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl app
+        run: |
+          echo "Pinging app..."
+          curl -I "https://fantasy-gpt-app-j2vuykqpgqvpeksrgq3agm.streamlit.app/"
