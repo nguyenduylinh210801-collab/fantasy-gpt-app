@@ -600,15 +600,16 @@ def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = Non
     vice_id    = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
     # chạy autosub để có 11 người & captain cuối
-    final_eleven, new_captain = _apply_basic_autosubs(
-        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
-    )
+#    final_eleven, new_captain = _apply_basic_autosubs(
+#        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
+#    )
 
     # --- TÍNH ĐIỂM ---
     total = sum(pts_map.get(el, 0) for el in final_eleven)
+    # Bench Boost: cộng thêm 4 ghế
     if is_bb:
         total += sum(pts_map.get(el, 0) for el in bench)
-
+    # Captain multiplier: chỉ cộng thêm nếu captain nằm trong tập đang được tính điểm (11 người, và nếu BB thì cả bench)
     def in_counting(x):
         if x is None: return False
         return (x in final_eleven) or (is_bb and x in bench)
