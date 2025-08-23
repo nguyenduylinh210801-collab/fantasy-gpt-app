@@ -584,7 +584,7 @@ def get_final_or_live_points(entry_id: int, gw: int) -> int:
 
 
 def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = None) -> int:
-    picks = get_entry_picks(entry_id, gw)
+    picks = get_entry_picks(entry_id, gw)  # chứa entry_history.event_transfers_cost
     pts_map, min_map = _live_maps(gw)
     elem_type_map = get_elements_index()
 
@@ -594,32 +594,34 @@ def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = Non
     is_tc = (active_chip == "triple_captain")
 
     plist = sorted(picks.get("picks", []), key=lambda x: x.get("position", 99))
-    starters = [p["element"] for p in plist if p.get("position", 99) <= 11]
-    bench = [p["element"] for p in plist if p.get("position", 99) > 11]
+    starters   = [p["element"] for p in plist if p.get("position", 99) <= 11]
+    bench      = [p["element"] for p in plist if p.get("position", 99) > 11]
     captain_id = next((p["element"] for p in plist if p.get("is_captain")), None)
-    vice_id = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
+    vice_id    = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
-    # --- TÍNH TỔNG ---
-    # Base: cộng 11 người cuối
+    # chạy autosub để có 11 người & captain cuối
+    final_eleven, new_captain = _apply_basic_autosubs(
+        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
+    )
+
+    # --- TÍNH ĐIỂM ---
     total = sum(pts_map.get(el, 0) for el in final_eleven)
-
-    # Bench Boost: cộng thêm 4 ghế
     if is_bb:
         total += sum(pts_map.get(el, 0) for el in bench)
 
-    # Captain multiplier: chỉ cộng thêm nếu captain nằm trong tập đang được tính điểm (11 người, và nếu BB thì cả bench)
     def in_counting(x):
-        if x is None:
-            return False
+        if x is None: return False
         return (x in final_eleven) or (is_bb and x in bench)
 
     if new_captain and in_counting(new_captain):
         base = pts_map.get(new_captain, 0)
-        extra = base if not is_tc else base * 2   # 2x => +1x; 3x => +2x
-        total += extra
+        total += base if not is_tc else base * 2
+
+    # ✅ trừ điểm phạt chuyển nhượng của GW (mỗi hit thường là 4 điểm)
+    cost = int((picks.get("entry_history") or {}).get("event_transfers_cost", 0) or 0)
+    total -= cost
 
     return int(total)
-
 
 def persist_final_gw_scores(entry_ids: list[int], gw: int):
     rows = []
