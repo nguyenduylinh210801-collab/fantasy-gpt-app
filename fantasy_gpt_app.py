@@ -1079,8 +1079,7 @@ m_left, m_right = st.columns([2, 1], gap="large")
 
 with m_left:
     st.metric("Current GW", f"{current_gw or '-'}")
-    if gw_name:
-        st.caption(gw_name)
+#
 #
 with m_right:
     st.metric("Finished?", "Yes" if finished else "No")
