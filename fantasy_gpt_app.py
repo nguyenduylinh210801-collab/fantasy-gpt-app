@@ -600,9 +600,9 @@ def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = Non
     vice_id    = next((p["element"] for p in plist if p.get("is_vice_captain")), None)
 
     # chạy autosub để có 11 người & captain cuối
-#    final_eleven, new_captain = _apply_basic_autosubs(
-#        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
-#    )
+    final_eleven, new_captain = _apply_basic_autosubs(
+        starters, bench, min_map, elem_type_map, captain_id, vice_id, triple_captain=is_tc
+    )
 
     # --- TÍNH ĐIỂM ---
     total = sum(pts_map.get(el, 0) for el in final_eleven)
