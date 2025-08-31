@@ -1040,6 +1040,19 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
 # =========================
 current_gw, finished = get_active_gw()
 gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
+
+# --- Auto-run once defaults ---
+if "did_first_autorun" not in st.session_state:
+    st.session_state.did_first_autorun = False
+
+# Set mặc định cho 3 input trong form (nếu chưa có)
+if "gw_from" not in st.session_state:
+    st.session_state.gw_from = 1
+if "gw_to" not in st.session_state:
+    st.session_state.gw_to = int(current_gw or 1)
+if "gw_result" not in st.session_state:
+    st.session_state.gw_result = int(current_gw or 1)
+
 # Hành động cho các nút ở sidebar
 if sb_sync_members:
     if league_id_int:
@@ -1110,17 +1123,24 @@ with tab1:
         with st.form("h2h_form", clear_on_submit=False, border=False):
             col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
             with col1:
-                gw_from = st.number_input("Từ GW", min_value=1, value=1, step=1, key="gw_from")
+                gw_from = st.number_input("Từ GW", min_value=1, value=int(st.session_state.gw_from), step=1, key="gw_from")
             with col2:
-                gw_to = st.number_input("Đến GW", min_value=gw_from, value=int(current_gw or 1), step=1, key="gw_to")
+                gw_to = st.number_input("Đến GW", min_value=gw_from, value=int(st.session_state.gw_to), step=1, key="gw_to")
             with col3:
-                gw_result = st.number_input("GW hiển thị kết quả", min_value=1, value=int(current_gw or 1), step=1, key="gw_result")
+                gw_result = st.number_input("GW hiển thị kết quả", min_value=1, value=int(st.session_state.gw_result), step=1, key="gw_result")
             with col4:
                 st.markdown("### &nbsp;", unsafe_allow_html=True)
                 do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
 
+
         # ✅ Đặt xử lý sau form nhưng vẫn trong else:
-        if do_both:
+# ✅ Chạy khi bấm nút, HOẶC tự động chạy 1 lần khi mới mở trang
+should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
+
+        if should_run_now:
+            # Đánh dấu đã autorun để lần sau không chạy lại
+            st.session_state.did_first_autorun = True
+
             # 0) Đảm bảo có members
             if gs_read_df("league_members").empty and league_id_int:
                 sync_members_to_db(int(league_id_int))
@@ -1132,7 +1152,7 @@ with tab1:
             for g in gws_need:
                 sync_gw_points_for(int(g), int(league_id_int))
 
-            # 2) Sau khi đảm bảo gw_scores đã có official, tạo bảng kết quả & BXH
+            # 2) Sau khi đảm bảo gw_scores đã có official/live mới nhất, tạo bảng kết quả & BXH
             compute_h2h_results_for_gw(int(league_id_int), int(gw_result))
 
             col_left, col_right = st.columns(2)
