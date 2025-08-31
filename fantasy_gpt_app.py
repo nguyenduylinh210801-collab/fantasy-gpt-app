@@ -1135,7 +1135,7 @@ with tab1:
 
         # ✅ Đặt xử lý sau form nhưng vẫn trong else:
 # ✅ Chạy khi bấm nút, HOẶC tự động chạy 1 lần khi mới mở trang
-should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
+    should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
 
         if should_run_now:
             # Đánh dấu đã autorun để lần sau không chạy lại
