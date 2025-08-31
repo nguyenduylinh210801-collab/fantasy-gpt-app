@@ -1115,6 +1115,11 @@ st.write("")
 # =========================
 tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
 
+# =========================
+# Tab layout
+# =========================
+tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
+
 with tab1:
     if not league_id_int:
         st.warning("Hãy nhập đúng H2H League ID ở sidebar.")
@@ -1123,19 +1128,35 @@ with tab1:
         with st.form("h2h_form", clear_on_submit=False, border=False):
             col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
             with col1:
-                gw_from = st.number_input("Từ GW", min_value=1, value=int(st.session_state.gw_from), step=1, key="gw_from")
+                gw_from = st.number_input(
+                    "Từ GW",
+                    min_value=1,
+                    value=int(st.session_state.gw_from),
+                    step=1,
+                    key="gw_from"
+                )
             with col2:
-                gw_to = st.number_input("Đến GW", min_value=gw_from, value=int(st.session_state.gw_to), step=1, key="gw_to")
+                gw_to = st.number_input(
+                    "Đến GW",
+                    min_value=gw_from,
+                    value=int(st.session_state.gw_to),
+                    step=1,
+                    key="gw_to"
+                )
             with col3:
-                gw_result = st.number_input("GW hiển thị kết quả", min_value=1, value=int(st.session_state.gw_result), step=1, key="gw_result")
+                gw_result = st.number_input(
+                    "GW hiển thị kết quả",
+                    min_value=1,
+                    value=int(st.session_state.gw_result),
+                    step=1,
+                    key="gw_result"
+                )
             with col4:
                 st.markdown("### &nbsp;", unsafe_allow_html=True)
                 do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
 
-
-        # ✅ Đặt xử lý sau form nhưng vẫn trong else:
-# ✅ Chạy khi bấm nút, HOẶC tự động chạy 1 lần khi mới mở trang
-    should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
+        # ✅ Chạy khi bấm nút, HOẶC tự động chạy 1 lần khi mới mở trang
+        should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
 
         if should_run_now:
             # Đánh dấu đã autorun để lần sau không chạy lại
@@ -1152,7 +1173,7 @@ with tab1:
             for g in gws_need:
                 sync_gw_points_for(int(g), int(league_id_int))
 
-            # 2) Sau khi đảm bảo gw_scores đã có official/live mới nhất, tạo bảng kết quả & BXH
+            # 2) Tạo bảng kết quả & BXH
             compute_h2h_results_for_gw(int(league_id_int), int(gw_result))
 
             col_left, col_right = st.columns(2)
@@ -1179,6 +1200,7 @@ with tab1:
                 )
             else:
                 col_right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
+
 
 
 with tab2:
