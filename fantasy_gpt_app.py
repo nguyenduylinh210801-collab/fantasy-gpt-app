@@ -583,13 +583,15 @@ def get_final_or_live_points(entry_id: int, gw: int) -> int:
 
 
 
-def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str = None) -> int:
+def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str | None = None) -> int:
     picks = get_entry_picks(entry_id, gw)  # chứa entry_history.event_transfers_cost
     pts_map, min_map = _live_maps(gw)
     elem_type_map = get_elements_index()
 
-    if active_chip is None:
-        active_chip = picks.get("active_chip", "") or ""
+    # ✅ Ưu tiên chip từ API, rồi mới đến tham số; xử lý luôn rỗng/None
+    chip_from_api = (picks.get("active_chip") or "").strip().lower()
+    active_chip = (chip_from_api or (active_chip or "")).lower()
+
     is_bb = (active_chip == "bench_boost")
     is_tc = (active_chip == "triple_captain")
 
