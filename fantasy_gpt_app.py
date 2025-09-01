@@ -374,6 +374,28 @@ def get_active_gw() -> tuple[int | None, bool]:
         return gw, is_event_official(gw)
     return None, False
 
+@st.cache_data(ttl=180)
+def is_event_official_relaxed(gw: int) -> bool:
+    """
+    OFFICIAL nếu:
+      - gw < current_gw  (đã qua vòng hiện tại, coi như đã chốt),
+      - hoặc (finished & data_checked) = True theo FPL.
+    """
+    bs = get_bootstrap()
+    events = bs.get("events", []) or []
+
+    cur = next((e for e in events if e.get("is_current")), None)
+    cur_id = int(cur["id"]) if cur and str(cur.get("id", "")).isdigit() else None
+
+    # Mọi GW đã qua vòng hiện tại → coi như official
+    if cur_id and gw < cur_id:
+        return True
+
+    # Nếu không có current (pre/đầu mùa) thì rơi về finished + data_checked
+    ev = next((e for e in events if int(e.get("id", 0)) == int(gw)), None)
+    if ev:
+        return bool(ev.get("finished")) and bool(ev.get("data_checked"))
+    return False
 
 @st.cache_data(ttl=180)
 def get_h2h_matches_page(league_id: int, gw: int, page: int = 1):
@@ -757,9 +779,10 @@ def sync_members_to_db(league_id: int) -> pd.DataFrame:
 
 # === PATCH 2: Wrapper sync theo trạng thái official của GW ===
 def sync_gw_points_for(gw: int, league_id: int):
-    """Nếu GW official -> ghi official; nếu chưa -> ghi live (tạm)."""
-    off = is_event_official(int(gw))
-    sync_gw_points(int(gw), off, int(league_id))
+    """Nếu GW<current ⇒ coi như official; ngược lại check finished & data_checked."""
+    finished = is_event_official_relaxed(int(gw))
+    sync_gw_points(int(gw), finished, int(league_id))
+
 
 
 def sync_gw_points(gw: int, finished: bool, league_id: int):
@@ -1092,6 +1115,29 @@ with st.sidebar.expander("♻️ Refresh official points", expanded=False):
             st.sidebar.info(f"Cache clear error: {e}")
 
         # 2) gọi sync lại cho toàn bộ 1..current_gw
+        if league_id_int and current_gw:
+            for g in range(1, int(current_gw) + 1):
+                try:
+                    sync_gw_points_for(int(g), int(league_id_int))
+                except Exception as e:
+                    st.sidebar.info(f"Sync GW{g} error: {e}")
+            st.sidebar.success("Resynced all GWs 1..current.")
+
+with st.sidebar.expander("♻️ Refresh official points", expanded=False):
+    if st.button("Clear caches & resync 1..current"):
+        try:
+            # clear toàn bộ caches liên quan official
+            is_event_official.clear()
+            is_event_official_relaxed.clear()
+            get_bootstrap.clear()
+            get_entry_history.clear()
+            get_event_live.clear()
+            get_entry_picks.clear()
+            st.sidebar.success("Caches cleared.")
+        except Exception as e:
+            st.sidebar.info(f"Cache clear error: {e}")
+
+        # resync lại toàn bộ từ 1..current_gw
         if league_id_int and current_gw:
             for g in range(1, int(current_gw) + 1):
                 try:
