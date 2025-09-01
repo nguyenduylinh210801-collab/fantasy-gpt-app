@@ -590,10 +590,11 @@ def compute_live_points_for_entry(entry_id: int, gw: int, active_chip: str | Non
 
     # ✅ Ưu tiên chip từ API, rồi mới đến tham số; xử lý luôn rỗng/None
     chip_from_api = (picks.get("active_chip") or "").strip().lower()
-    active_chip = (chip_from_api or (active_chip or "")).lower()
+    active_chip   = (chip_from_api or (active_chip or "")).lower()
 
-    is_bb = (active_chip == "bench_boost")
-    is_tc = (active_chip == "triple_captain")
+    is_bb = (active_chip in ["bench_boost", "bboost", "bb"])
+    is_tc = (active_chip in ["triple_captain", "3xc", "tc"])
+
 
     plist = sorted(picks.get("picks", []), key=lambda x: x.get("position", 99))
     starters   = [p["element"] for p in plist if p.get("position", 99) <= 11]
