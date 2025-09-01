@@ -1123,28 +1123,6 @@ with st.sidebar.expander("♻️ Refresh official points", expanded=False):
                     st.sidebar.info(f"Sync GW{g} error: {e}")
             st.sidebar.success("Resynced all GWs 1..current.")
 
-with st.sidebar.expander("♻️ Refresh official points", expanded=False):
-    if st.button("Clear caches & resync 1..current"):
-        try:
-            # clear toàn bộ caches liên quan official
-            is_event_official.clear()
-            is_event_official_relaxed.clear()
-            get_bootstrap.clear()
-            get_entry_history.clear()
-            get_event_live.clear()
-            get_entry_picks.clear()
-            st.sidebar.success("Caches cleared.")
-        except Exception as e:
-            st.sidebar.info(f"Cache clear error: {e}")
-
-        # resync lại toàn bộ từ 1..current_gw
-        if league_id_int and current_gw:
-            for g in range(1, int(current_gw) + 1):
-                try:
-                    sync_gw_points_for(int(g), int(league_id_int))
-                except Exception as e:
-                    st.sidebar.info(f"Sync GW{g} error: {e}")
-            st.sidebar.success("Resynced all GWs 1..current.")
 
 # Hành động cho các nút ở sidebar
 if sb_sync_members:
