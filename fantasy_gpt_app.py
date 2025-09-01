@@ -1053,6 +1053,22 @@ if "gw_to" not in st.session_state:
 if "gw_result" not in st.session_state:
     st.session_state.gw_result = int(current_gw or 1)
 
+# === PATCH: Auto-sync tất cả GW đã official (finished & data_checked) ===
+if league_id_int:
+    bs = get_bootstrap()
+    events = bs.get("events", []) or []
+    finished_official_gws = [
+        int(e["id"]) for e in events
+        if e.get("finished") and e.get("data_checked")
+    ]
+    for gw in finished_official_gws:
+        try:
+            # Nếu GW đã official => sync_gw_points_for sẽ ghi đè live bằng official
+            sync_gw_points_for(int(gw), int(league_id_int))
+        except Exception as err:
+            st.sidebar.info(f"Không thể sync official cho GW{gw}: {err}")
+
+
 # Hành động cho các nút ở sidebar
 if sb_sync_members:
     if league_id_int:
@@ -1153,7 +1169,7 @@ with tab1:
                 )
             with col4:
                 st.markdown("### &nbsp;", unsafe_allow_html=True)
-                do_both = st.form_submit_button("⚡ Cập nhật & Xây", type="primary")
+                do_both = st.form_submit_button("⚡ Cập nhật ", type="primary")
 
         # ✅ Chạy khi bấm nút, HOẶC tự động chạy 1 lần khi mới mở trang
         should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
