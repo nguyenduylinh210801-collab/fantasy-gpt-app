@@ -779,10 +779,8 @@ def sync_members_to_db(league_id: int) -> pd.DataFrame:
 
 # === PATCH 2: Wrapper sync theo trạng thái official của GW ===
 def sync_gw_points_for(gw: int, league_id: int):
-    """Nếu GW<current ⇒ coi như official; ngược lại check finished & data_checked."""
-    finished = is_event_official(int(gw))
+    finished = is_event_official_relaxed(int(gw))  # ✅ thay bằng hàm relaxed
     sync_gw_points(int(gw), finished, int(league_id))
-
 
 
 def sync_gw_points(gw: int, finished: bool, league_id: int):
