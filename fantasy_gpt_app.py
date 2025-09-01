@@ -797,12 +797,14 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
         chip = ""  # ✅ luôn khởi tạo
 
         if finished:
-            # Dùng official từ history
             h = get_entry_history(entry_id)
             current = h.get("current", [])
             row = next((r for r in current if r.get("event") == gw), None)
-            pts = int(row.get("points", 0)) if row else 0
-            is_live = False
+            if row:
+                pts = int(row.get("points", 0)) - int(row.get("event_transfers_cost", 0))
+            else:
+                pts = 0
+
         else:
             # LIVE points
             try:
