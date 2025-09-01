@@ -795,15 +795,18 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
     for _, m in dfm.iterrows():
         entry_id = int(m["entry_id"])
         chip = ""  # ✅ luôn khởi tạo
-
         if finished:
-            h = get_entry_history(entry_id)
-            current = h.get("current", [])
-            row = next((r for r in current if r.get("event") == gw), None)
-            if row:
-                pts = int(row.get("points", 0)) - int(row.get("event_transfers_cost", 0))
-            else:
-                pts = 0
+            try:
+                picks = get_entry_picks(entry_id, gw)
+                chip = picks.get("active_chip", "") or ""
+                pts = picks["entry_history"]["points"]  # ✅ đã tính autosub + chip + -4
+                is_live = False
+            except Exception:
+                h = get_entry_history(entry_id)
+                current = h.get("current", [])
+                row = next((r for r in current if r.get("event") == gw), None)
+                pts = int(row.get("points", 0)) if row else 0
+                is_live = False
 
         else:
             # LIVE points
