@@ -1205,11 +1205,6 @@ st.write("")
 # =========================
 tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
 
-# =========================
-# Tab layout
-# =========================
-tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
-
 with tab1:
     if not league_id_int:
         st.warning("Hãy nhập đúng H2H League ID ở sidebar.")
