@@ -1039,6 +1039,7 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
     return df.sort_values("p_top1", ascending=False)
 
 # =========================
+# =========================
 # UI Controls (đẹp & cân đối)
 # =========================
 current_gw, finished = get_active_gw()
@@ -1056,21 +1057,48 @@ if "gw_to" not in st.session_state:
 if "gw_result" not in st.session_state:
     st.session_state.gw_result = int(current_gw or 1)
 
-# === PATCH: Auto-sync tất cả GW đã official (finished & data_checked) ===
-if league_id_int:
-    bs = get_bootstrap()
-    events = bs.get("events", []) or []
-    finished_official_gws = [
-        int(e["id"]) for e in events
-        if e.get("finished") and e.get("data_checked")
-    ]
-    for gw in finished_official_gws:
-        try:
-            # Nếu GW đã official => sync_gw_points_for sẽ ghi đè live bằng official
-            sync_gw_points_for(int(gw), int(league_id_int))
-        except Exception as err:
-            st.sidebar.info(f"Không thể sync official cho GW{gw}: {err}")
+# (optional) chỉ auto-sync official 1 lần cho mỗi session
+if "did_official_autosync" not in st.session_state:
+    st.session_state.did_official_autosync = False
 
+# === PATCH: Auto-sync tất cả GW đã official (finished & data_checked) — chạy 1 lần mỗi session
+if league_id_int and not st.session_state.did_official_autosync:
+    try:
+        bs = get_bootstrap()
+        events = bs.get("events", []) or []
+        finished_official_gws = [int(e["id"]) for e in events if e.get("finished") and e.get("data_checked")]
+        for gw in finished_official_gws:
+            try:
+                # Nếu GW đã official, hàm này sẽ ghi đè live bằng official
+                sync_gw_points_for(int(gw), int(league_id_int))
+            except Exception as err:
+                st.sidebar.info(f"Không thể sync official cho GW{gw}: {err}")
+        st.session_state.did_official_autosync = True
+    except Exception as e:
+        st.sidebar.info(f"Auto-sync official error: {e}")
+
+# === FORCE REFRESH & RESYNC OFFICIAL FOR ALL PAST GWs (khi bạn thấy FPL vừa data_checked) ===
+with st.sidebar.expander("♻️ Refresh official points", expanded=False):
+    if st.button("Clear caches & resync 1..current"):
+        try:
+            # 1) clear cache để lấy trạng thái mới nhất từ FPL
+            is_event_official.clear()
+            get_bootstrap.clear()
+            get_entry_history.clear()
+            get_event_live.clear()
+            get_entry_picks.clear()
+            st.sidebar.success("Caches cleared.")
+        except Exception as e:
+            st.sidebar.info(f"Cache clear error: {e}")
+
+        # 2) gọi sync lại cho toàn bộ 1..current_gw
+        if league_id_int and current_gw:
+            for g in range(1, int(current_gw) + 1):
+                try:
+                    sync_gw_points_for(int(g), int(league_id_int))
+                except Exception as e:
+                    st.sidebar.info(f"Sync GW{g} error: {e}")
+            st.sidebar.success("Resynced all GWs 1..current.")
 
 # Hành động cho các nút ở sidebar
 if sb_sync_members:
@@ -1081,13 +1109,12 @@ if sb_sync_members:
     else:
         st.sidebar.error("Thiếu hoặc sai League ID.")
 
-# === PATCH 4: Nếu GW đang quan tâm đã official, đảm bảo DB có official (ghi đè live nếu cần)
+# Nếu GW đang quan tâm đã official, đảm bảo DB có official (ghi đè live nếu cần)
 if current_gw and league_id_int and is_event_official(int(current_gw)):
     try:
         sync_gw_points_for(int(current_gw), int(league_id_int))
     except Exception as e:
         st.sidebar.info(f"Không thể auto-sync official cho GW{current_gw}: {e}")
-
 
 if sb_sync_points:
     if current_gw and league_id_int:
@@ -1099,14 +1126,12 @@ if sb_sync_points:
     else:
         st.sidebar.error("Không xác định được GW.")
 
-
 if sb_recompute:
     if current_gw:
         with st.spinner("Tính BXH..."):
-            # Ở đây BXH được build khi bạn bấm 'Xây BXH' trong tab,
-            # nên ta chỉ báo thành công (hoặc bạn có thể gọi compute_h2h_results_for_gw + build_h2h_table nếu muốn)
             pass
         st.sidebar.success("Done!")
+
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
 if INVITE_CODE:
