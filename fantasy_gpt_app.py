@@ -797,7 +797,10 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
             try:
                 picks = get_entry_picks(entry_id, gw)
                 chip = picks.get("active_chip", "") or ""
-                pts = picks["entry_history"]["points"]  # ✅ đã tính autosub + chip + -4
+                eh = picks.get("entry_history", {}) or {}
+                pts = int(eh.get("points", 0))
+                hits = int(eh.get("event_transfers_cost", 0))
+                pts -= hits  # ✅ trừ điểm phạt
                 is_live = False
             except Exception:
                 h = get_entry_history(entry_id)
@@ -805,6 +808,7 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
                 row = next((r for r in current if r.get("event") == gw), None)
                 pts = int(row.get("points", 0)) if row else 0
                 is_live = False
+
 
         else:
             # LIVE points
