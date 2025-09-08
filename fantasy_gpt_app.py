@@ -163,10 +163,8 @@ from google.oauth2.service_account import Credentials
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 @st.cache_data(ttl=600)
-def get_settings_dict() -> dict:
-    df = gs_read_df("settings")
-    return {row["key"]: row["value"] for _, row in df.iterrows()} if not df.empty else {}
-
+def get_cached_settings() -> pd.DataFrame:
+    return gs_read_df("settings")
 
 @st.cache_resource(show_spinner=False)
 def get_gs_client():
@@ -315,24 +313,26 @@ def gs_select(table: str, where: Dict[str, str] = None, select: List[str] = None
     return df.reset_index(drop=True)
 
 def get_setting(key: str, default: str = "") -> str:
-    return get_settings_dict().get(key, default)
+    df = get_cached_settings()
+    if df.empty or key not in df["key"].values:
+        return default
+    return df[df["key"] == key]["value"].values[0]
 
 
 def set_setting(key: str, value: str):
     value = str(value)
-    old = get_setting(key)
-    # Nếu không thay đổi giá trị thì không cần ghi lại
-    if old == value:
-        return
-    df = gs_read_df("settings")
+    df = get_cached_settings()  # cached call
     row = {"key": key, "value": value}
+
     if df.empty or key not in df["key"].values:
         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     else:
         df.loc[df["key"] == key, "value"] = value
+
     gs_upsert("settings", ["key"], df.to_dict(orient="records"))
-    # ⚠️ Bắt buộc: xoá cache cũ để lần sau get_setting() đọc lại đúng
-    st.cache_data.clear()
+    from streamlit.runtime.caching import cache_data_api
+    cache_data_api.clear()  # clear toàn bộ cache data khi ghi mới
+
 
 
 # Sidebar controls
