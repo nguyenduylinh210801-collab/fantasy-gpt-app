@@ -70,15 +70,6 @@ league_id_int = _to_int(league_id)
 if league_id and league_id_int is None:
     st.sidebar.error("⚠️ League ID phải là số nguyên.")
 
-if "df_members" not in st.session_state:
-    try:
-        df = gs_read_df("league_members")  # không cache bước đầu
-        st.session_state.df_members = df
-    except Exception as e:
-        st.error(f"❌ Lỗi đọc 'league_members': {e}")
-        st.stop()
-
-
 
 # Streamlit Page
 
@@ -214,6 +205,16 @@ def gs_read_df(title: str) -> pd.DataFrame:
         return pd.DataFrame(columns=headers)
 
     return pd.DataFrame(data)
+
+# ===== INIT df_members sau khi đã có gs_read_df =====
+if "df_members" not in st.session_state:
+    try:
+        df = gs_read_df("league_members")
+        st.session_state.df_members = df
+    except Exception as e:
+        st.error(f"❌ Lỗi đọc 'league_members': {e}")
+        st.stop()
+
 
 def gs_upsert(title: str, key_cols: List[str], rows: List[dict]):
     if not rows:
