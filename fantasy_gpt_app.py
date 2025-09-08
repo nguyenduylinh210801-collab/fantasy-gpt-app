@@ -71,7 +71,12 @@ if league_id and league_id_int is None:
     st.sidebar.error("⚠️ League ID phải là số nguyên.")
 
 if "df_members" not in st.session_state:
-    st.session_state.df_members = gs_read_df("league_members")
+    @st.cache_data(ttl=600, show_spinner=False)
+    def _load_members():
+        return gs_read_df("league_members")
+
+    st.session_state.df_members = _load_members()
+
 
 # Streamlit Page
 
