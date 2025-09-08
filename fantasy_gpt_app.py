@@ -1,45 +1,3 @@
-"""
-FPL H2H Tracker — Streamlit app (Google Sheets backend)
-Features:
-- Fetch H2H league members via FPL API
-- Pull per-GW official points (finished GWs) and show ranking by FPL points (descending)
-- Persist data (members, gw_scores, gw_rank, gw_predictions) to **Google Sheets** (no data loss on reload)
-- Monte Carlo simulation to estimate P(top1/2/3) each GW
-
-Setup:
-1) Streamlit Cloud → Settings → Secrets, paste (replace with your values):
-
-[FYI] .streamlit/secrets.toml
-FPL_LEAGUE_ID = "1007448"        # your H2H league id
-INVITE_CODE = "u3dip1"           # optional, to display invite code
-GSPREAD_SHEET_ID = "1AbC...xyz"  # Google Sheets spreadsheet ID
-
-# Service Account JSON (rename the key to gcp_service_account)
-[gcp_service_account]
-type = "service_account"
-project_id = "your-project"
-private_key_id = "..."
-private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-client_email = "service-account@your-project.iam.gserviceaccount.com"
-client_id = "..."
-# (include the rest of fields exactly as in the downloaded JSON)
-
-2) Share the Google Sheet with: service-account@your-project.iam.gserviceaccount.com (Editor)
-3) Create **empty** spreadsheet, no tabs needed (the app will create tabs if missing)
-4) requirements.txt additions:
-requests
-streamlit
-numpy
-pandas
-gspread
-google-auth
-matplotlib
-
-5) Run locally:
-  pip install -r requirements.txt
-  streamlit run app.py
-"""
-
 import os, json
 import requests
 import numpy as np
@@ -89,10 +47,7 @@ def show_vn(df, kind: str):
     safe_map = {k: v for k, v in mapping.items() if k in df.columns}
     return df.rename(columns=safe_map)
 
-
-# =========================
 # Config from Secrets
-# =========================
 FPL_LEAGUE_ID = st.secrets.get("FPL_LEAGUE_ID")
 INVITE_CODE   = st.secrets.get("INVITE_CODE", "")
 SHEET_ID      = st.secrets.get("GSPREAD_SHEET_ID")
@@ -115,10 +70,11 @@ league_id_int = _to_int(league_id)
 if league_id and league_id_int is None:
     st.sidebar.error("⚠️ League ID phải là số nguyên.")
 
+if "df_members" not in st.session_state:
+    st.session_state.df_members = gs_read_df("league_members")
 
-# =========================
 # Streamlit Page
-# =========================
+
 st.set_page_config(page_title="FPL H2H Tracker", page_icon="⚽", layout="wide")
 # ===== CSS tùy chỉnh =====
 st.markdown("""
@@ -154,9 +110,7 @@ div[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
 st.title("⚽ SO Fantasy Premier League")
 
 
-# =========================
 # Google Sheets helpers (gspread)
-# =========================
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -318,7 +272,6 @@ def get_setting(key: str, default: str = "") -> str:
         return default
     return df[df["key"] == key]["value"].values[0]
 
-
 def set_setting(key: str, value: str):
     value = str(value)
     df = get_cached_settings()  # cached call
@@ -330,10 +283,9 @@ def set_setting(key: str, value: str):
         df.loc[df["key"] == key, "value"] = value
 
     gs_upsert("settings", ["key"], df.to_dict(orient="records"))
-    st.cache_data.clear()  # Xóa toàn bộ cache data để đảm bảo lần sau đọc lại mới
 
-
-
+    # ✅ Chỉ xóa cache của get_cached_settings
+    get_cached_settings.clear()
 
 # Sidebar controls
 st.sidebar.header("⚙️ Cài đặt")
@@ -706,7 +658,7 @@ def persist_final_gw_scores(entry_ids: list[int], gw: int):
 # ✅ Đúng:
 
 def build_rankings(entry_ids: list[int], gw: int) -> list[dict]:
-    mems = gs_select("league_members")
+    mems = st.session_state.df_members
     name_map = dict(zip(mems["entry_id"].astype(int), mems["entry_name"])) if not mems.empty else {}
 
     chip_map = {}
@@ -1095,10 +1047,7 @@ def simulate_top_probs(gw: int, n: int = 10000) -> pd.DataFrame:
     df["entry_name"] = names
     return df.sort_values("p_top1", ascending=False)
 
-# =========================
-# =========================
 # UI Controls (đẹp & cân đối)
-# =========================
 current_gw, finished = get_active_gw()
 gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else ("", "", "")
 
@@ -1192,31 +1141,23 @@ if sb_recompute:
             pass
         st.sidebar.success("Done!")
 
-
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
 if INVITE_CODE:
     st.markdown(
         f'<div class="app-note">👉 Nhập code để tham gia: <b>{INVITE_CODE}</b></div>',
         unsafe_allow_html=True
     )
-
 st.write("")  # spacing nhẹ
 
 # Hàng metric: 2 cột (ẩn League ID)
 m_left, m_right = st.columns([2, 1], gap="large")
-
 with m_left:
     st.metric("Current GW", f"{current_gw or '-'}")
-#
-#
 with m_right:
     st.metric("Finished?", "Yes" if finished else "No")
-
 st.write("")  
 
-# =========================
 # Tab layout
-# =========================
 tab1, = st.tabs(["🏆 Bảng xếp hạng"])
 
 with tab1:
@@ -1304,4 +1245,3 @@ with tab1:
                 )
             else:
                 col_right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
-
