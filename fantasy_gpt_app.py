@@ -308,6 +308,21 @@ def gs_select(table: str, where: Dict[str, str] = None, select: List[str] = None
         df = df[cols]
     return df.reset_index(drop=True)
 
+def get_setting(key: str, default: str = "") -> str:
+    df = gs_read_df("settings")
+    if df.empty or key not in df["key"].values:
+        return default
+    return df[df["key"] == key]["value"].values[0]
+
+def set_setting(key: str, value: str):
+    df = gs_read_df("settings")
+    row = {"key": key, "value": str(value)}
+    if df.empty or key not in df["key"].values:
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    else:
+        df.loc[df["key"] == key, "value"] = str(value)
+    gs_upsert("settings", ["key"], df.to_dict(orient="records"))
+
 # Sidebar controls
 st.sidebar.header("⚙️ Cài đặt")
 
@@ -916,7 +931,7 @@ def build_h2h_table(upto_gw: int) -> pd.DataFrame:
     else:
         agg["entry_name"] = agg["entry_id"].astype(str)
 
-    # Tie-breaker: P → GD → GF (KHÔNG có mini-league H2H)
+    # Tie-breaker: P → GF (KHÔNG có mini-league H2H)
     agg = agg.sort_values(["P", "GF"], ascending=[False, False]).reset_index(drop=True)
     agg["rank"] = np.arange(1, len(agg)+1)
 
@@ -1081,11 +1096,13 @@ if "did_first_autorun" not in st.session_state:
 
 # Set mặc định cho 3 input trong form (nếu chưa có)
 if "gw_from" not in st.session_state:
-    st.session_state.gw_from = 1
+    st.session_state.gw_from = int(get_setting("gw_from", "1"))
+
 if "gw_to" not in st.session_state:
-    st.session_state.gw_to = int(current_gw or 1)
+    st.session_state.gw_to = int(get_setting("gw_to", str(current_gw or 1)))
+
 if "gw_result" not in st.session_state:
-    st.session_state.gw_result = int(current_gw or 1)
+    st.session_state.gw_result = int(get_setting("gw_result", str(current_gw or 1)))
 
 # (optional) chỉ auto-sync official 1 lần cho mỗi session
 if "did_official_autosync" not in st.session_state:
@@ -1188,7 +1205,7 @@ st.write("")
 # =========================
 # Tab layout
 # =========================
-tab1, tab2 = st.tabs(["🏆 Bảng xếp hạng", "📈 Dự đoán"])
+tab1 = st.tabs(["🏆 Bảng xếp hạng"])
 
 with tab1:
     if not league_id_int:
@@ -1232,6 +1249,11 @@ with tab1:
             # Đánh dấu đã autorun để lần sau không chạy lại
             st.session_state.did_first_autorun = True
 
+            # 💾 Lưu lại giá trị người dùng chọn vào tab settings
+            set_setting("gw_from", gw_from)
+            set_setting("gw_to", gw_to)
+            set_setting("gw_result", gw_result)
+
             # 0) Đảm bảo có members
             if gs_read_df("league_members").empty and league_id_int:
                 sync_members_to_db(int(league_id_int))
@@ -1270,33 +1292,4 @@ with tab1:
                 )
             else:
                 col_right.info(f"Không có dữ liệu kết quả cho GW {gw_result}.")
-
-
-
-with tab2:
-    if current_gw:
-        if st.button("Run Monte Carlo (10k)"):
-            with st.spinner("Đang mô phỏng..."):
-                dfp = simulate_top_probs(current_gw)
-                st.success("Done!")
-        rows = gs_select("gw_predictions", where={"gw": "eq." + str(current_gw)})
-        if not rows.empty:
-            mems = gs_select("league_members")
-            out = rows.merge(mems, on="entry_id", how="left")
-
-            # Ép kiểu số & sort giảm dần
-            for c in ["p_top1", "p_top2", "p_top3"]:
-                out[c] = pd.to_numeric(out[c], errors="coerce")
-            out = out.sort_values("p_top1", ascending=False)
-
-            # Thêm ký hiệu % khi render
-            show = out[["entry_name", "p_top1", "p_top2", "p_top3"]].copy()
-            for c in ["p_top1", "p_top2", "p_top3"]:
-                show[c] = show[c].map(lambda v: f"{v:.2f}%" if pd.notna(v) else "")
-
-            st.subheader(f"Xác suất Top 1/2/3 — GW{current_gw}")
-            st.dataframe(show, use_container_width=True)
-        else:
-            st.info("Chưa có kết quả mô phỏng.")
-
 
