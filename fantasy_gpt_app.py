@@ -330,8 +330,8 @@ def set_setting(key: str, value: str):
         df.loc[df["key"] == key, "value"] = value
 
     gs_upsert("settings", ["key"], df.to_dict(orient="records"))
-    from streamlit.runtime.caching import cache_data_api
-    cache_data_api.clear()  # clear toàn bộ cache data khi ghi mới
+    st.cache_data.clear()  # Xóa toàn bộ cache data để đảm bảo lần sau đọc lại mới
+
 
 
 
