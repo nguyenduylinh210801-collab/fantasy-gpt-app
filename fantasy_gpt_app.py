@@ -1205,7 +1205,7 @@ st.write("")
 # =========================
 # Tab layout
 # =========================
-tab1 = st.tabs(["🏆 Bảng xếp hạng"])
+tab1, = st.tabs(["🏆 Bảng xếp hạng"])
 
 with tab1:
     if not league_id_int:
