@@ -766,12 +766,12 @@ def sync_members_to_db(league_id: int) -> pd.DataFrame:
 
 # === PATCH 2: Wrapper sync theo trạng thái official của GW ===
 def sync_gw_points_for(gw: int, league_id: int):
-    finished = is_event_official_relaxed(int(gw))  # ✅ thay bằng hàm relaxed
-    sync_gw_points(int(gw), finished, int(league_id))
+    finished = is_event_official_relaxed(int(gw))
+    rows = sync_gw_points(int(gw), finished, int(league_id))
+    if rows:
+        gs_upsert("gw_scores", ["entry_id", "gw"], rows)
 
-
-def sync_gw_points(gw: int, finished: bool, league_id: int):
-    # read members (prefer DB, fallback to API)
+def sync_gw_points(gw: int, finished: bool, league_id: int) -> list[dict]:
     dfm = gs_read_df("league_members")
     if dfm.empty:
         dfm = pd.DataFrame(fetch_all_members(int(league_id)))
@@ -779,15 +779,14 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
     rows = []
     for _, m in dfm.iterrows():
         entry_id = int(m["entry_id"])
-        chip = ""  # ✅ luôn khởi tạo
+        chip, pts, is_live = "", 0, True
+
         if finished:
             try:
                 picks = get_entry_picks(entry_id, gw)
                 chip = picks.get("active_chip", "") or ""
                 eh = picks.get("entry_history", {}) or {}
-                pts = int(eh.get("points", 0))
-                hits = int(eh.get("event_transfers_cost", 0))
-                pts -= hits  # ✅ trừ điểm phạt
+                pts = int(eh.get("points", 0)) - int(eh.get("event_transfers_cost", 0) or 0)
                 is_live = False
             except Exception:
                 h = get_entry_history(entry_id)
@@ -795,10 +794,7 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
                 row = next((r for r in current if r.get("event") == gw), None)
                 pts = int(row.get("points", 0)) if row else 0
                 is_live = False
-
-
         else:
-            # LIVE points
             try:
                 picks = get_entry_picks(entry_id, gw)
                 chip = picks.get("active_chip", "") or ""
@@ -815,13 +811,12 @@ def sync_gw_points(gw: int, finished: bool, league_id: int):
             "gw": int(gw),
             "points": int(pts),
             "live": is_live,
-            "chip": chip,  # ✅ giờ luôn tồn tại
+            "chip": chip,
             "updated_at": pd.Timestamp.utcnow().isoformat(),
         })
 
+    return rows
 
-    if rows:
-        gs_upsert("gw_scores", ["entry_id","gw"], rows)
 
 def get_points_map_for_gw(gw: int) -> dict[int, int]:
     df = gs_select("gw_scores", where={"gw": "eq."+str(gw)})
@@ -1146,8 +1141,11 @@ if sb_sync_points:
 if sb_recompute:
     if current_gw:
         with st.spinner("Tính BXH..."):
-            pass
-        st.sidebar.success("Done!")
+            out = recompute_rank(int(current_gw))
+        st.sidebar.success("Đã tính lại BXH cho GW hiện tại.")
+        if out is not None and not out.empty:
+            st.subheader(f"BXH theo điểm GW{current_gw}")
+            st.dataframe(out, use_container_width=True)
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
 if INVITE_CODE:
@@ -1176,29 +1174,14 @@ with tab1:
         with st.form("h2h_form", clear_on_submit=False, border=False):
             col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
             with col1:
-                gw_from = st.number_input(
-                    "Từ GW",
-                    min_value=1,
-                    value=int(st.session_state.gw_from),
-                    step=1,
-                    key="gw_from"
-                )
+                gw_from = st.number_input("Từ GW", min_value=1, value=int(st.session_state.gw_from), step=1)
+                st.session_state.gw_from = gw_from
             with col2:
-                gw_to = st.number_input(
-                    "Đến GW",
-                    min_value=gw_from,
-                    value=int(st.session_state.gw_to),
-                    step=1,
-                    key="gw_to"
-                )
+                gw_to = st.number_input("Đến GW", min_value=gw_from, value=int(st.session_state.gw_to), step=1)
+                st.session_state.gw_to = gw_to
             with col3:
-                gw_result = st.number_input(
-                    "GW hiển thị kết quả",
-                    min_value=1,
-                    value=int(st.session_state.gw_result),
-                    step=1,
-                    key="gw_result"
-                )
+                gw_result = st.number_input("GW hiển thị kết quả", min_value=1, value=int(st.session_state.gw_result), step=1)
+                st.session_state.gw_result = gw_result
             with col4:
                 st.markdown("### &nbsp;", unsafe_allow_html=True)
                 do_both = st.form_submit_button("⚡ Cập nhật ", type="primary")
