@@ -295,25 +295,12 @@ def set_setting(key: str, value: str):
     # ✅ Chỉ xóa cache của get_cached_settings
     get_cached_settings.clear()
 
-# Sidebar controls
-st.sidebar.header("⚙️ Cài đặt")
-
-if st.sidebar.button("Test Google Sheets"):
-    try:
-        sh = get_sheet()
-        wss = [ws.title for ws in sh.worksheets()]
-        st.sidebar.success(f"Kết nối OK. Worksheets: {wss}")
-    except Exception as e:
-        st.sidebar.error(f"Lỗi GS: {e}")
 
 # === Sidebar: Admin tools ===
 with st.sidebar.expander("🔧 Admin tools", expanded=True):
     sb_sync_members = st.button("Sync members", use_container_width=True)
     sb_sync_points  = st.button("Sync points (current GW)", use_container_width=True)
-    sb_recompute    = st.button("Recompute rank", use_container_width=True)
 
-
-# =========================
 # FPL API helpers
 # =========================
 SESSION = requests.Session()
@@ -1058,15 +1045,16 @@ gw_name, gw_start, gw_deadline = get_event_times(current_gw) if current_gw else 
 if "did_first_autorun" not in st.session_state:
     st.session_state.did_first_autorun = False
 
-# Set mặc định cho 3 input trong form (nếu chưa có)
-if "gw_from" not in st.session_state:
-    st.session_state.gw_from = int(get_setting("gw_from", "1"))
+# === INIT settings (chỉ đọc Google Sheets 1 lần để tránh quota) ===
+if "settings_inited" not in st.session_state:
+    df_settings = get_cached_settings()
+    settings_map = dict(zip(df_settings["key"], df_settings["value"])) if not df_settings.empty else {}
 
-if "gw_to" not in st.session_state:
-    st.session_state.gw_to = int(get_setting("gw_to", str(current_gw or 1)))
+    st.session_state.gw_from = int(settings_map.get("gw_from", 1))
+    st.session_state.gw_to = int(settings_map.get("gw_to", current_gw or 1))
+    st.session_state.gw_result = int(settings_map.get("gw_result", current_gw or 1))
 
-if "gw_result" not in st.session_state:
-    st.session_state.gw_result = int(get_setting("gw_result", str(current_gw or 1)))
+    st.session_state.settings_inited = True
 
 # (optional) chỉ auto-sync official 1 lần cho mỗi session
 if "did_official_autosync" not in st.session_state:
@@ -1138,14 +1126,6 @@ if sb_sync_points:
     else:
         st.sidebar.error("Không xác định được GW.")
 
-if sb_recompute:
-    if current_gw:
-        with st.spinner("Tính BXH..."):
-            out = recompute_rank(int(current_gw))
-        st.sidebar.success("Đã tính lại BXH cho GW hiện tại.")
-        if out is not None and not out.empty:
-            st.subheader(f"BXH theo điểm GW{current_gw}")
-            st.dataframe(out, use_container_width=True)
 
 # Banner mời tham gia (kiểu card nhẹ – cần CSS .app-note ở phần CSS bạn đã thêm)
 if INVITE_CODE:
