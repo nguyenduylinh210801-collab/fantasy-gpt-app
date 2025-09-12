@@ -1060,22 +1060,6 @@ if "settings_inited" not in st.session_state:
 if "did_official_autosync" not in st.session_state:
     st.session_state.did_official_autosync = False
 
-# === PATCH: Auto-sync tất cả GW đã official (finished & data_checked) — chạy 1 lần mỗi session
-if league_id_int and not st.session_state.did_official_autosync:
-    try:
-        bs = get_bootstrap()
-        events = bs.get("events", []) or []
-        finished_official_gws = [int(e["id"]) for e in events if e.get("finished") and e.get("data_checked")]
-        for gw in finished_official_gws:
-            try:
-                # Nếu GW đã official, hàm này sẽ ghi đè live bằng official
-                sync_gw_points_for(int(gw), int(league_id_int))
-            except Exception as err:
-                st.sidebar.info(f"Không thể sync official cho GW{gw}: {err}")
-        st.session_state.did_official_autosync = True
-    except Exception as e:
-        st.sidebar.info(f"Auto-sync official error: {e}")
-
 # === FORCE REFRESH & RESYNC OFFICIAL FOR ALL PAST GWs (khi bạn thấy FPL vừa data_checked) ===
 with st.sidebar.expander("♻️ Refresh official points", expanded=False):
     if st.button("Clear caches & resync 1..current"):
@@ -1170,26 +1154,22 @@ with tab1:
         should_run_now = bool(do_both) or (not st.session_state.did_first_autorun and league_id_int)
 
         if should_run_now:
-            # Đánh dấu đã autorun để lần sau không chạy lại
             st.session_state.did_first_autorun = True
 
-            # 💾 Lưu lại giá trị người dùng chọn vào tab settings
+            # Lưu settings người dùng chọn
             set_setting("gw_from", gw_from)
             set_setting("gw_to", gw_to)
             set_setting("gw_result", gw_result)
 
-            # 0) Đảm bảo có members
+            # Đảm bảo có members
             if gs_read_df("league_members").empty and league_id_int:
                 sync_members_to_db(int(league_id_int))
 
-            # 1) Sync điểm cho dải BXH và GW kết quả (official nếu có)
-            gws_need = list(range(int(gw_from), int(gw_to) + 1))
-            if int(gw_result) not in gws_need:
-                gws_need.append(int(gw_result))
-            for g in gws_need:
-                sync_gw_points_for(int(g), int(league_id_int))
+            # 🔑 Chỉ sync GW hiện tại thôi
+            if current_gw and league_id_int:
+                sync_gw_points_for(int(current_gw), int(league_id_int))
 
-            # 2) Tạo bảng kết quả & BXH
+            # Vẫn tính BXH theo range user chọn (dùng dữ liệu đã lưu lần trước)
             compute_h2h_results_for_gw(int(league_id_int), int(gw_result))
 
             col_left, col_right = st.columns(2)
